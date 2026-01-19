@@ -1,0 +1,6 @@
+streamlit
+simplekml
+pyproj
+Pillow
+pytesseract
+numpy
