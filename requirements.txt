@@ -7,3 +7,4 @@ pandas
 numpy
 opencv-python-headless
 streamlit-cropper
+openpyxl
