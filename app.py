@@ -8,7 +8,7 @@ import pytesseract
 import shutil
 import pandas as pd
 import numpy as np
-import cv2  # 引入工业级视觉库
+import cv2
 
 # --- 环境配置 ---
 if os.name == 'nt':
@@ -17,88 +17,68 @@ else:
     tess_path = shutil.which("tesseract")
     if tess_path: pytesseract.pytesseract.tesseract_cmd = tess_path
 
-st.set_page_config(page_title="风资源坐标神器v9.0", page_icon="🧿", layout="centered")
+st.set_page_config(page_title="风资源坐标神器v10.0", page_icon="💀", layout="centered")
 
 # --- 核心算法 ---
-def dms_to_decimal(d, m, s):
-    return float(d) + float(m)/60 + float(s)/3600
-
-def ddm_to_decimal(d, m):
-    return float(d) + float(m)/60
-
-def clean_text_block(text):
-    # 极度暴力的清洗，把可能干扰数字的符号全换空格
-    text = text.replace('|', ' ').replace('!', ' ').replace(']', ' ').replace('[', ' ')
-    text = text.replace('°', ' ').replace("'", ' ').replace('"', ' ').replace(':', ' ')
-    text = text.replace('l', '1').replace('O', '0').replace('o', '0')
-    # 去除常见的 T1, T2 编号干扰 (把 T 换成空格)
-    text = text.replace('T', ' ').replace('t', ' ')
-    return text
-
-def extract_numbers_from_text(text):
-    # 提取所有数字
-    nums = re.findall(r"[-+]?\d+\.\d+|[-+]?\d+", text)
-    return [float(n) for n in nums]
-
-def process_image_opencv(pil_image, zoom, remove_grid):
-    """工业级图像处理：自适应阈值 + 形态学去线"""
-    # 1. 转为 OpenCV 格式
+def process_image_v10(pil_image, mode_type, threshold, remove_line):
     img_cv = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-    
-    # 2. 暴力放大
-    h, w = img_cv.shape[:2]
-    img_cv = cv2.resize(img_cv, (int(w*zoom), int(h*zoom)), interpolation=cv2.INTER_CUBIC)
-    
-    # 3. 转灰度
     gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
     
-    # 4. 自适应二值化 (关键！专治光照不均/蓝底)
-    # block_size 决定了局部区域的大小，C 是常数
-    binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                   cv2.THRESH_BINARY, 31, 15)
+    # 1. 二值化策略
+    if mode_type == "自动(适应蓝底/阴影)":
+        # 自适应阈值，专治光线不均
+        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                       cv2.THRESH_BINARY, 31, 15)
+    else:
+        # 手动阈值，专治字迹太淡
+        _, binary = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
     
-    # 5. 去除表格线 (可选)
-    if remove_grid:
-        # 定义横线和竖线结构
-        hor_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
-        ver_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 40))
-        
-        # 检测线
-        hor_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, hor_kernel, iterations=2)
-        ver_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, ver_kernel, iterations=2)
-        
-        # 这种方法是把检测到的线“加粗”然后变成白色(背景)，从而抹除黑色线条
-        # 更好的方法是：用原图减去线条图？或者直接把线条区域填白
-        # 这里用简单的 mask 填白
-        cnts_h, _ = cv2.findContours(hor_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cnts_v, _ = cv2.findContours(ver_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        # 把线涂白
-        cv2.drawContours(binary, cnts_h, -1, (255,255,255), 5)
-        cv2.drawContours(binary, cnts_v, -1, (255,255,255), 3)
+    # 2. 暴力去线 (可选，如果字被线切断了就关掉它)
+    if remove_line:
+        kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (50, 1))
+        kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 50))
+        lines_h = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_h, iterations=1)
+        lines_v = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_v, iterations=1)
+        # 变白
+        binary[lines_h==255] = 255
+        binary[lines_v==255] = 255
 
     return Image.fromarray(binary)
 
-def global_harvest(text, mode):
-    """☢️ 暴力收割 V2"""
-    clean_txt = clean_text_block(text)
-    all_nums = extract_numbers_from_text(clean_txt)
-    pairs = []
+def extract_coords_from_text(text, mode):
+    # 清洗
+    text = text.replace('°', ' ').replace("'", ' ').replace('"', ' ').replace(':', ' ')
+    text = text.replace('l', '1').replace('O', '0').replace('o', '0')
+    text = text.replace('|', ' ').replace('[', ' ').replace(']', ' ')
+    
+    # 提取所有数字 (保留原样字符串，防止精度丢失)
+    # 逻辑：匹配像浮点数的东西
+    raw_nums = re.findall(r"[-+]?\d+\.\d+|[-+]?\d+", text)
+    
+    data = []
+    
+    # 转为 float 进行逻辑判断，但存储 string
+    nums_val = [float(n) for n in raw_nums]
     
     if mode == "Decimal":
-        # 过滤掉编号(通常<30或整数)，保留像坐标的数(30 < x < 180)
-        # 你的图里是 82.xxx 和 43.xxx，所以阈值设为 30 比较稳
-        valid_nums = [n for n in all_nums if 20 < abs(n) < 180]
-        # 强制配对
-        for i in range(0, len(valid_nums) - 1, 2):
-            pairs.append((valid_nums[i], valid_nums[i+1]))
+        # 找 3 < x < 180 的数
+        valid_indices = [i for i, n in enumerate(nums_val) if 3 < abs(n) < 180]
+        # 两两配对
+        for i in range(0, len(valid_indices) - 1, 2):
+            idx1 = valid_indices[i]
+            idx2 = valid_indices[i+1]
+            # 存储为字符串，保证小数点不丢失
+            data.append({"纬度/X": raw_nums[idx1], "经度/Y": raw_nums[idx2]})
             
     elif mode == "CGCS2000":
-        valid_nums = [n for n in all_nums if abs(n) > 300000]
-        for i in range(0, len(valid_nums) - 1, 2):
-            pairs.append((valid_nums[i], valid_nums[i+1]))
+        valid_indices = [i for i, n in enumerate(nums_val) if abs(n) > 300000]
+        for i in range(0, len(valid_indices) - 1, 2):
+            idx1 = valid_indices[i]
+            idx2 = valid_indices[i+1]
+            data.append({"纬度/X": raw_nums[idx1], "经度/Y": raw_nums[idx2]})
             
-    return pairs
+    # DMS/DDM 比较复杂，暂只支持 Decimal 和 2000 的暴力提取
+    return data
 
 def cgcs2000_to_wgs84(v1, v2, cm_val, force_swap):
     x, y = (v2, v1) if force_swap else (v1, v2)
@@ -117,94 +97,103 @@ def cgcs2000_to_wgs84(v1, v2, cm_val, force_swap):
     except: return None, "转换错"
 
 # --- 界面 ---
-st.title("🧿 风资源坐标神器 v9.0 (工业版)")
-st.caption("引入 OpenCV 自适应处理 · 专治蓝底烂图")
+st.title("💀 风资源坐标神器 v10.0")
+st.caption("人机合一模式：OCR识别 -> 人工修正 -> 生成")
 
-img_file = st.file_uploader("📄 上传图片", type=['png', 'jpg', 'jpeg'])
+with st.sidebar:
+    st.header("1. 图像处理")
+    proc_mode = st.selectbox("处理模式", ["自动(适应蓝底/阴影)", "手动(调节黑白阈值)"])
+    thresh = 127
+    if proc_mode == "手动(调节黑白阈值)":
+        thresh = st.slider("黑白阈值", 0, 255, 120)
+    
+    remove_line = st.checkbox("尝试抹除表格线", value=False, help="如果数字被线切断了，请取消勾选此项")
+    
+    st.header("2. 坐标参数")
+    coord_mode = st.selectbox("坐标格式", ["Decimal", "CGCS2000", "DMS", "DDM"])
+    
+    cm_val = 0
+    force_swap = False
+    if coord_mode == "CGCS2000":
+        cm_options = {"自动": 0, "75": 75, "81": 81, "87": 87, "93": 93, "99": 99, "105": 105, "114": 114, "123": 123}
+        cm_val = cm_options[st.selectbox("中央经线", list(cm_options.keys()))]
+        force_swap = st.checkbox("强制交换XY")
+
+img_file = st.file_uploader("📸 上传图片", type=['png', 'jpg', 'jpeg'])
+
+if 'raw_ocr_text' not in st.session_state:
+    st.session_state.raw_ocr_text = ""
 
 if img_file:
-    st.divider()
-    col1, col2 = st.columns([1, 1])
+    image = Image.open(img_file)
+    # 图像处理预览
+    processed_img = process_image_v10(image, proc_mode, thresh, remove_line)
+    st.image(processed_img, caption="机器眼中的图 (如果不清晰，请调整左侧设置)", use_column_width=True)
     
-    with col1:
-        st.subheader("1. 图像增强")
-        # 默认开启去网格
-        remove_grid = st.checkbox("🔪 自动抹除表格线 (推荐开启)", value=True)
-        zoom = st.slider("🔎 放大倍数", 1.5, 3.5, 2.0)
-        
-        image = Image.open(img_file)
-        # 调用 OpenCV 处理
-        processed_img = process_image_opencv(image, zoom, remove_grid)
-        
-        st.image(processed_img, caption="机器眼中的画面 (注意看左侧数字是否清晰)", use_column_width=True)
+    if st.button("🔥 第一步：提取文字", type="primary"):
+        with st.spinner("OCR 扫描中..."):
+            # 识别
+            text = pytesseract.image_to_string(processed_img, lang='eng', config='--psm 6')
+            st.session_state.raw_ocr_text = text
+            st.rerun()
 
-    with col2:
-        st.subheader("2. 识别设置")
-        mode = st.radio("坐标格式", ("Decimal", "DMS", "DDM", "CGCS2000"), 
-                 format_func=lambda x: {
-                     "Decimal": "🔢 纯小数 (如 82.7807)", 
-                     "DMS": "🌐 度分秒 (如 41°15'30\")",
-                     "DDM": "⏱️ 度+分 (如 41°15.5')",
-                     "CGCS2000": "📐 大地2000 (大数)"
-                 }[x])
+# 文本修正区 (核心功能)
+if st.session_state.raw_ocr_text:
+    st.divider()
+    st.subheader("📝 第二步：修正识别结果")
+    st.caption("如果在下面看到乱码，请直接在这里修改！比如把 l 改成 1，补上小数点。")
+    
+    # 让用户可以编辑 OCR 的原始文本
+    user_edited_text = st.text_area("OCR 原始文本 (可编辑)", 
+                                  value=st.session_state.raw_ocr_text, 
+                                  height=200)
+    
+    if st.button("⚡ 第三步：解析并生成表格"):
+        raw_data = extract_coords_from_text(user_edited_text, coord_mode)
         
-        cm_val = 0
-        force_swap = False
-        if mode == "CGCS2000":
-            st.info("设置大地2000参数：")
-            cm_options = {"自动(8位带号)": 0, "75": 75, "81": 81, "87": 87, "93": 93, "99": 99, "105": 105, "114": 114, "123": 123}
-            cm_val = cm_options[st.selectbox("中央经线", list(cm_options.keys()))]
-            force_swap = st.checkbox("强制交换 XY")
+        if raw_data:
+            df = pd.DataFrame(raw_data)
+            st.session_state.df = df
+            st.success(f"成功提取 {len(raw_data)} 组坐标！")
+        else:
+            st.error("未在文本中提取到有效坐标，请检查上面的文本是否包含数字。")
 
-        st.write("")
-        if st.button("🔥 开始识别", type="primary", use_container_width=True):
-            with st.spinner("正在进行工业级扫描..."):
-                raw_text = pytesseract.image_to_string(processed_img, lang='eng', config='--psm 6')
+# 结果生成区
+if 'df' in st.session_state and not st.session_state.df.empty:
+    st.divider()
+    st.subheader("🚀 第四步：下载 KMZ")
+    
+    # 强制显示为字符串，防止显示时精度丢失
+    st.data_editor(st.session_state.df, num_rows="dynamic")
+    
+    if st.button("📥 生成最终文件"):
+        kml = simplekml.Kml()
+        cnt = 0
+        for idx, row in st.session_state.df.iterrows():
+            try:
+                # 转 float 计算
+                v1 = float(row["纬度/X"])
+                v2 = float(row["经度/Y"])
+                lat, lon = 0, 0
                 
-                raw_data = []
-                # 直接使用暴力收割模式，因为对于这种图，按行识别太容易受干扰
-                pairs = global_harvest(raw_text, mode)
-                
-                for p in pairs:
-                    lat, lon = p[0], p[1]
-                    # 自动归位：在中国，经度(73-135) > 纬度(18-54)
-                    # 你图里是 82(经) 和 43(纬)
-                    if lat > lon and lat < 180: lat, lon = lon, lat # 确保lat是小的，lon是大的
-                    # 再次校验，如果反了（比如lon是82，lat是43，上面逻辑会变成 lat=43, lon=82，这是对的）
-                    # 但如果本来就是 lat=82(国外?), lon=43，这个逻辑会强制把大的当经度。
-                    # 针对你的图：T1 82... 43... -> 82是经度，43是纬度。
-                    # 结果应为: 纬度43, 经度82
-                    if lat > 60: # 简单的中国区判断，纬度很少超过60
-                         lat, lon = lon, lat
-
-                    raw_data.append({"纬度/X": lat, "经度/Y": lon, "来源": "暴力收割"})
-
-                if raw_data:
-                    st.session_state.df = pd.DataFrame(raw_data)
-                    st.success(f"✅ 成功提取 {len(raw_data)} 行！")
+                # 简单归位
+                if coord_mode == "Decimal":
+                    lat, lon = v1, v2
+                    if lat > lon and lat < 180: lat, lon = lon, lat # 中国区经度通常大
+                    if lat > 60: lat, lon = lon, lat # 再次保险
+                elif coord_mode == "CGCS2000":
+                    res, msg = cgcs2000_to_wgs84(v1, v2, cm_val, force_swap)
+                    if res: lat, lon = res, msg
+                    else: continue
                 else:
-                    st.error("❌ 识别失败。")
-                    with st.expander("调试信息"):
-                        st.text(raw_text)
-
-    if 'df' in st.session_state and not st.session_state.df.empty:
-        st.divider()
-        st.subheader("3. 结果核对")
-        edited_df = st.data_editor(st.session_state.df, num_rows="dynamic", use_container_width=True)
+                    # DMS/DDM 在文本编辑阶段建议直接手动改为小数，或者这里简单处理
+                    lat, lon = v1, v2
+                
+                kml.newpoint(name=f"P{idx+1}", coords=[(lon, lat)])
+                cnt += 1
+            except: continue
         
-        if st.button("🚀 生成 KMZ"):
-            kml = simplekml.Kml()
-            for idx, row in edited_df.iterrows():
-                try:
-                    v1, v2 = float(row["纬度/X"]), float(row["经度/Y"])
-                    lat, lon = 0, 0
-                    if v1 > 180 or v2 > 180:
-                         res, msg = cgcs2000_to_wgs84(v1, v2, cm_val, force_swap)
-                         if res: lat, lon = res, msg
-                         else: continue
-                    else: lat, lon = v1, v2
-                    kml.newpoint(name=f"P{idx+1}", coords=[(lon, lat)])
-                except: continue
+        if cnt > 0:
             kml.save("points.kmz")
             with open("points.kmz", "rb") as f:
-                st.download_button("📥 下载 KMZ", f, "Points.kmz", type="primary")
+                st.download_button("点击下载 KMZ", f, "坐标.kmz", type="primary")
