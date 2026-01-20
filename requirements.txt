@@ -3,4 +3,5 @@ simplekml
 pyproj
 Pillow
 pytesseract
+pandas
 numpy
