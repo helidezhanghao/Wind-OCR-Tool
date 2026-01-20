@@ -18,8 +18,7 @@ else:
     tess_path = shutil.which("tesseract")
     if tess_path: pytesseract.pytesseract.tesseract_cmd = tess_path
 
-# 🔥 这里改了名字
-st.set_page_config(page_title="力力的坐标工具", page_icon="📍", layout="centered")
+st.set_page_config(page_title="力力的坐标工具v16.0", page_icon="📍", layout="centered")
 
 # --- 状态初始化 ---
 if 'angle' not in st.session_state:
@@ -36,30 +35,44 @@ def rotate_image(image, angle):
     """无损旋转"""
     return image.rotate(angle, expand=True)
 
-def visualize_lines(pil_image, line_thickness, threshold):
-    """可视化去线"""
+def process_image_final(pil_image, do_remove_lines, line_thickness, threshold):
+    """
+    处理最终图像：
+    1. 基础二值化 (必做)
+    2. 去表格线 (可选)
+    """
     img_cv = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    
+    # 1. 二值化
     _, binary = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
     
-    kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (int(line_thickness * 10), 1))
-    mask_h = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_h, iterations=1)
-    
-    kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(line_thickness * 10)))
-    mask_v = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_v, iterations=1)
-    
-    mask_lines = cv2.bitwise_or(mask_h, mask_v)
-    
-    preview = img_cv.copy()
-    preview[mask_lines == 255] = [0, 0, 255] # 标红
-    
-    clean_binary = binary.copy()
-    clean_binary[mask_lines == 255] = 255 # 涂白
-    
-    return Image.fromarray(cv2.cvtColor(preview, cv2.COLOR_BGR2RGB)), Image.fromarray(clean_binary)
+    # 2. 如果选择去线
+    if do_remove_lines:
+        # 提取线条掩膜
+        kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (int(line_thickness * 10), 1))
+        mask_h = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_h, iterations=1)
+        
+        kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(line_thickness * 10)))
+        mask_v = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_v, iterations=1)
+        
+        mask_lines = cv2.bitwise_or(mask_h, mask_v)
+        
+        # 预览图：把线涂红
+        preview = img_cv.copy()
+        preview[mask_lines == 255] = [0, 0, 255] 
+        
+        # 结果图：把线涂白
+        clean_binary = binary.copy()
+        clean_binary[mask_lines == 255] = 255
+        
+        return Image.fromarray(cv2.cvtColor(preview, cv2.COLOR_BGR2RGB)), Image.fromarray(clean_binary)
+    else:
+        # 如果不去线，预览图就是二值化后的图
+        res_img = Image.fromarray(binary)
+        return res_img, res_img
 
 def smart_fix_decimal(val):
-    """小数模式：智能修复丢失的小数点"""
     if val > 180 and val < 200000000: 
         s_val = str(int(val))
         if len(s_val) >= 4:
@@ -76,24 +89,21 @@ def ddm_to_dec(d, m):
     return float(d) + float(m)/60
 
 def extract_coords(text, mode):
-    # 清洗干扰字符
     text = text.replace('|', ' ').replace('[', ' ').replace(']', ' ')
     text = text.replace('°', ' ').replace("'", ' ').replace('"', ' ').replace(':', ' ')
-    # 提取所有数字
     raw_nums = re.findall(r"[-+]?\d+\.\d+|[-+]?\d+", text)
     nums_val = [float(n) for n in raw_nums]
     
     data = []
 
     if mode == "Decimal":
-        # 找 3 < x < 180
         fixed_nums = [smart_fix_decimal(n) for n in nums_val]
         valid_indices = [i for i, n in enumerate(fixed_nums) if 3 < abs(n) < 180]
         for i in range(0, len(valid_indices) - 1, 2):
             idx1, idx2 = valid_indices[i], valid_indices[i+1]
             data.append({"纬度/X": fixed_nums[idx1], "经度/Y": fixed_nums[idx2]})
             
-    elif mode == "DMS": # 度 分 秒
+    elif mode == "DMS": 
         if len(nums_val) >= 6:
             for i in range(len(nums_val) - 5):
                 g = nums_val[i:i+6]
@@ -103,7 +113,7 @@ def extract_coords(text, mode):
                     lon = dms_to_dec(g[3], g[4], g[5])
                     data.append({"纬度/X": lat, "经度/Y": lon})
 
-    elif mode == "DDM": # 度 分
+    elif mode == "DDM": 
         if len(nums_val) >= 4:
             for i in range(len(nums_val) - 3):
                 g = nums_val[i:i+4]
@@ -137,8 +147,7 @@ def to_wgs84(v1, v2, cm, swap):
 
 # ================= 界面主逻辑 =================
 
-# 🔥 这里也改了名字
-st.title("📍 力力的坐标工具")
+st.title("📍 力力的坐标工具 v16.0")
 
 # --- 步骤 1: 上传 ---
 st.header("1️⃣ 上传图片")
@@ -156,44 +165,62 @@ if img_file:
 # --- 步骤 2: 旋转 & 裁切 ---
 if st.session_state.step >= 2 and 'raw_img' in st.session_state:
     st.divider()
-    st.header("2️⃣ 旋转 & 裁切")
-    st.info("👇 拖动红框选中数据！")
+    st.header("2️⃣ 图像调整")
     
-    c1, c2, c3 = st.columns([1, 1, 2])
-    with c1:
-        if st.button("↺ 左旋90°", use_container_width=True):
-            st.session_state.angle += 90
-            st.rerun()
-    with c2:
-        if st.button("↻ 右旋90°", use_container_width=True):
-            st.session_state.angle -= 90
-            st.rerun()
-    with c3:
-        input_angle = st.number_input("精确角度微调", value=float(st.session_state.angle), step=0.5)
-        if input_angle != st.session_state.angle:
-            st.session_state.angle = input_angle
-            st.rerun()
+    # 选项：是否启用裁切
+    use_crop = st.checkbox("✂️ 启用裁切 / 旋转 (如果图片不需要调整，请取消勾选)", value=True)
+    
+    if use_crop:
+        st.info("👇 拖动红框选中数据！")
+        c1, c2, c3 = st.columns([1, 1, 2])
+        with c1:
+            if st.button("↺ 左旋90°", use_container_width=True):
+                st.session_state.angle += 90
+                st.rerun()
+        with c2:
+            if st.button("↻ 右旋90°", use_container_width=True):
+                st.session_state.angle -= 90
+                st.rerun()
+        with c3:
+            input_angle = st.number_input("精确角度微调", value=float(st.session_state.angle), step=0.5)
+            if input_angle != st.session_state.angle:
+                st.session_state.angle = input_angle
+                st.rerun()
 
-    rotated = rotate_image(st.session_state.raw_img, st.session_state.angle)
-    cropped = st_cropper(rotated, realtime_update=True, box_color='#FF0000', aspect_ratio=None)
-    
-    if st.button("✂️ 确认裁切，下一步", type="primary", use_container_width=True):
-        st.session_state.cropped_img = cropped
+        rotated = rotate_image(st.session_state.raw_img, st.session_state.angle)
+        cropped = st_cropper(rotated, realtime_update=True, box_color='#FF0000', aspect_ratio=None)
+        
+        if st.button("✂️ 确认裁切，下一步", type="primary", use_container_width=True):
+            st.session_state.cropped_img = cropped
+            st.session_state.step = 3
+            st.rerun()
+    else:
+        # 如果跳过裁切，直接使用原图（不做旋转）
+        st.session_state.cropped_img = st.session_state.raw_img
         st.session_state.step = 3
+        # 自动进入下一步，无需按钮
         st.rerun()
 
 # --- 步骤 3: 调整 & 识别 ---
 if st.session_state.step >= 3 and st.session_state.cropped_img:
     st.divider()
-    st.header("3️⃣ 调整去表格线")
+    st.header("3️⃣ 识别设置")
     
     col_ctrl, col_view = st.columns([1, 2])
     with col_ctrl:
-        thresh = st.slider("黑白阈值", 0, 255, 140)
-        line_w = st.slider("线条粗细 (红线宽度)", 1, 10, 4)
+        st.subheader("⚙️ 参数")
+        
+        # 选项：是否去表格线
+        do_remove_lines = st.checkbox("🧹 启用去表格线", value=True, help="如果图片没有干扰线，请取消勾选，以免误删文字")
+        
+        thresh = st.slider("黑白阈值 (调节文字清晰度)", 0, 255, 140)
+        
+        line_w = 4
+        if do_remove_lines:
+            line_w = st.slider("线条粗细 (红线宽度)", 1, 10, 4)
         
         st.write("---")
-        # 完整的选项
+        # 坐标选项
         coord_mode = st.selectbox("坐标格式", 
                                   ["Decimal", "DMS", "DDM", "CGCS2000"],
                                   format_func=lambda x: {
@@ -209,8 +236,13 @@ if st.session_state.step >= 3 and st.session_state.cropped_img:
             cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
             
     with col_view:
-        preview, final_clean = visualize_lines(st.session_state.cropped_img, line_w, thresh)
-        st.image(preview, caption="红线 = 即将删除的表格线", use_column_width=True)
+        # 实时处理
+        preview, final_clean = process_image_final(st.session_state.cropped_img, do_remove_lines, line_w, thresh)
+        
+        if do_remove_lines:
+            st.image(preview, caption="🔴 红线 = 即将删除的表格线", use_column_width=True)
+        else:
+            st.image(preview, caption="机器眼中的图像 (二值化结果)", use_column_width=True)
 
     if st.button("🔥 开始识别", type="primary", use_container_width=True):
         with st.spinner("识别中..."):
@@ -238,10 +270,8 @@ if st.session_state.step == 4:
                     lat, lon = 0, 0
                     
                     if coord_mode in ["Decimal", "DMS", "DDM"]:
-                        # 已经是经纬度小数了
                         lat, lon = (v1, v2) if v1 < v2 else (v2, v1)
                     else:
-                        # 大地2000
                         res, msg = to_wgs84(v1, v2, cm, False)
                         if res: lat, lon = res, msg
                         else: continue
