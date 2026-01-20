@@ -18,7 +18,8 @@ else:
     tess_path = shutil.which("tesseract")
     if tess_path: pytesseract.pytesseract.tesseract_cmd = tess_path
 
-st.set_page_config(page_title="风资源坐标神器v14.0", page_icon="💀", layout="centered")
+# 🔥 这里改了名字
+st.set_page_config(page_title="力力的坐标工具", page_icon="📍", layout="centered")
 
 # --- 状态初始化 ---
 if 'angle' not in st.session_state:
@@ -36,69 +37,87 @@ def rotate_image(image, angle):
     return image.rotate(angle, expand=True)
 
 def visualize_lines(pil_image, line_thickness, threshold):
-    """
-    可视化去线：返回 (预览红线图, 最终去线图)
-    """
+    """可视化去线"""
     img_cv = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-    
-    # 二值化
     _, binary = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
     
-    # 提取线条掩膜
     kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (int(line_thickness * 10), 1))
     mask_h = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_h, iterations=1)
     
     kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(line_thickness * 10)))
     mask_v = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_v, iterations=1)
     
-    # 合并掩膜
     mask_lines = cv2.bitwise_or(mask_h, mask_v)
     
-    # 1. 预览图：把线涂红
     preview = img_cv.copy()
-    preview[mask_lines == 255] = [0, 0, 255] # BGR Red
+    preview[mask_lines == 255] = [0, 0, 255] # 标红
     
-    # 2. 结果图：把线涂白
     clean_binary = binary.copy()
-    clean_binary[mask_lines == 255] = 255
+    clean_binary[mask_lines == 255] = 255 # 涂白
     
     return Image.fromarray(cv2.cvtColor(preview, cv2.COLOR_BGR2RGB)), Image.fromarray(clean_binary)
 
-def smart_fix_coordinate(val):
-    """智能修复丢失的小数点"""
+def smart_fix_decimal(val):
+    """小数模式：智能修复丢失的小数点"""
     if val > 180 and val < 200000000: 
         s_val = str(int(val))
         if len(s_val) >= 4:
-            # 尝试在第2位后加点
             v2 = float(s_val[:2] + "." + s_val[2:])
             if 3 < v2 < 180: return v2
-            # 尝试在第3位后加点
             v3 = float(s_val[:3] + "." + s_val[3:])
             if 3 < v3 < 180: return v3
     return val
 
+def dms_to_dec(d, m, s):
+    return float(d) + float(m)/60 + float(s)/3600
+
+def ddm_to_dec(d, m):
+    return float(d) + float(m)/60
+
 def extract_coords(text, mode):
-    # 清洗
+    # 清洗干扰字符
     text = text.replace('|', ' ').replace('[', ' ').replace(']', ' ')
+    text = text.replace('°', ' ').replace("'", ' ').replace('"', ' ').replace(':', ' ')
+    # 提取所有数字
     raw_nums = re.findall(r"[-+]?\d+\.\d+|[-+]?\d+", text)
-    data = []
-    nums_val = []
-    for n in raw_nums:
-        v = float(n)
-        if mode == "Decimal": v = smart_fix_coordinate(v)
-        nums_val.append(v)
+    nums_val = [float(n) for n in raw_nums]
     
+    data = []
+
     if mode == "Decimal":
         # 找 3 < x < 180
-        valid_indices = [i for i, n in enumerate(nums_val) if 3 < abs(n) < 180]
+        fixed_nums = [smart_fix_decimal(n) for n in nums_val]
+        valid_indices = [i for i, n in enumerate(fixed_nums) if 3 < abs(n) < 180]
         for i in range(0, len(valid_indices) - 1, 2):
-            data.append({"纬度/X": nums_val[valid_indices[i]], "经度/Y": nums_val[valid_indices[i+1]]})
+            idx1, idx2 = valid_indices[i], valid_indices[i+1]
+            data.append({"纬度/X": fixed_nums[idx1], "经度/Y": fixed_nums[idx2]})
+            
+    elif mode == "DMS": # 度 分 秒
+        if len(nums_val) >= 6:
+            for i in range(len(nums_val) - 5):
+                g = nums_val[i:i+6]
+                if (abs(g[0])<180 and g[1]<60 and g[2]<60 and 
+                    abs(g[3])<180 and g[4]<60 and g[5]<60):
+                    lat = dms_to_dec(g[0], g[1], g[2])
+                    lon = dms_to_dec(g[3], g[4], g[5])
+                    data.append({"纬度/X": lat, "经度/Y": lon})
+
+    elif mode == "DDM": # 度 分
+        if len(nums_val) >= 4:
+            for i in range(len(nums_val) - 3):
+                g = nums_val[i:i+4]
+                if (abs(g[0])<180 and g[1]<60 and abs(g[2])<180 and g[3]<60):
+                    lat = ddm_to_dec(g[0], g[1])
+                    lon = ddm_to_dec(g[2], g[3])
+                    data.append({"纬度/X": lat, "经度/Y": lon})
+
     elif mode == "CGCS2000":
-        # 找大数
         valid_indices = [i for i, n in enumerate(nums_val) if abs(n) > 300000]
         for i in range(0, len(valid_indices) - 1, 2):
-            data.append({"纬度/X": nums_val[valid_indices[i]], "经度/Y": nums_val[valid_indices[i+1]]})
+            idx1, idx2 = valid_indices[i], valid_indices[i+1]
+            data.append({"纬度/X": nums_val[idx1], "经度/Y": nums_val[idx2]})
+            
     return data
 
 def to_wgs84(v1, v2, cm, swap):
@@ -118,14 +137,14 @@ def to_wgs84(v1, v2, cm, swap):
 
 # ================= 界面主逻辑 =================
 
-st.title("💀 风资源坐标神器 v14.0")
+# 🔥 这里也改了名字
+st.title("📍 力力的坐标工具")
 
 # --- 步骤 1: 上传 ---
 st.header("1️⃣ 上传图片")
 img_file = st.file_uploader("", type=['png', 'jpg', 'jpeg'], label_visibility="collapsed")
 
 if img_file:
-    # 只要上传新文件，强制重置
     if 'last_file' not in st.session_state or st.session_state.last_file != img_file.name:
         st.session_state.last_file = img_file.name
         st.session_state.raw_img = Image.open(img_file)
@@ -138,9 +157,8 @@ if img_file:
 if st.session_state.step >= 2 and 'raw_img' in st.session_state:
     st.divider()
     st.header("2️⃣ 旋转 & 裁切")
-    st.info("👇 先把图转正，然后拖动红框选中数据！")
+    st.info("👇 拖动红框选中数据！")
     
-    # 旋转控制 (解决互斥问题的关键：都操作同一个 state.angle)
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
         if st.button("↺ 左旋90°", use_container_width=True):
@@ -151,16 +169,12 @@ if st.session_state.step >= 2 and 'raw_img' in st.session_state:
             st.session_state.angle -= 90
             st.rerun()
     with c3:
-        # 数字输入框直接绑定 state.angle，实现任意微调
-        input_angle = st.number_input("精确角度微调 (支持小数)", value=float(st.session_state.angle), step=0.5)
+        input_angle = st.number_input("精确角度微调", value=float(st.session_state.angle), step=0.5)
         if input_angle != st.session_state.angle:
             st.session_state.angle = input_angle
             st.rerun()
 
-    # 执行旋转
     rotated = rotate_image(st.session_state.raw_img, st.session_state.angle)
-    
-    # 裁切控件
     cropped = st_cropper(rotated, realtime_update=True, box_color='#FF0000', aspect_ratio=None)
     
     if st.button("✂️ 确认裁切，下一步", type="primary", use_container_width=True):
@@ -168,20 +182,27 @@ if st.session_state.step >= 2 and 'raw_img' in st.session_state:
         st.session_state.step = 3
         st.rerun()
 
-# --- 步骤 3: 可视化去线 ---
+# --- 步骤 3: 调整 & 识别 ---
 if st.session_state.step >= 3 and st.session_state.cropped_img:
     st.divider()
     st.header("3️⃣ 调整去表格线")
-    st.caption("🔴 红色 = 即将删除的内容。请调整滑块，确保红色只覆盖线，不覆盖字！")
     
     col_ctrl, col_view = st.columns([1, 2])
     with col_ctrl:
         thresh = st.slider("黑白阈值", 0, 255, 140)
         line_w = st.slider("线条粗细 (红线宽度)", 1, 10, 4)
         
-        # 格式选择放在这里
         st.write("---")
-        coord_mode = st.selectbox("坐标格式", ["Decimal", "CGCS2000"])
+        # 完整的选项
+        coord_mode = st.selectbox("坐标格式", 
+                                  ["Decimal", "DMS", "DDM", "CGCS2000"],
+                                  format_func=lambda x: {
+                                      "Decimal": "🔢 纯小数 (如 82.78)",
+                                      "DMS": "🌐 度分秒 (如 41°15'30\")",
+                                      "DDM": "⏱️ 度+分 (如 41°15.5')",
+                                      "CGCS2000": "📐 大地2000"
+                                  }[x])
+        
         cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
         cm = 0
         if coord_mode == "CGCS2000":
@@ -189,7 +210,7 @@ if st.session_state.step >= 3 and st.session_state.cropped_img:
             
     with col_view:
         preview, final_clean = visualize_lines(st.session_state.cropped_img, line_w, thresh)
-        st.image(preview, caption="去线预览 (红线将被删除)", use_column_width=True)
+        st.image(preview, caption="红线 = 即将删除的表格线", use_column_width=True)
 
     if st.button("🔥 开始识别", type="primary", use_container_width=True):
         with st.spinner("识别中..."):
@@ -203,10 +224,6 @@ if st.session_state.step == 4:
     st.divider()
     st.header("4️⃣ 结果生成")
     
-    # 动态获取前面选的参数
-    # 注意：streamlit在rerun后控件值会重置，这里重新解析一次或依赖session_state
-    # 简化逻辑：直接用当前raw_text解析
-    
     raw_data = extract_coords(st.session_state.raw_text, coord_mode)
     
     if raw_data:
@@ -219,12 +236,16 @@ if st.session_state.step == 4:
                 try:
                     v1, v2 = float(row["纬度/X"]), float(row["经度/Y"])
                     lat, lon = 0, 0
-                    if coord_mode == "Decimal":
+                    
+                    if coord_mode in ["Decimal", "DMS", "DDM"]:
+                        # 已经是经纬度小数了
                         lat, lon = (v1, v2) if v1 < v2 else (v2, v1)
                     else:
+                        # 大地2000
                         res, msg = to_wgs84(v1, v2, cm, False)
                         if res: lat, lon = res, msg
                         else: continue
+                    
                     kml.newpoint(name=f"P{i+1}", coords=[(lon, lat)])
                 except: continue
             kml.save("out.kmz")
@@ -232,7 +253,7 @@ if st.session_state.step == 4:
                 st.download_button("📥 下载文件", f, "out.kmz", type="primary")
     else:
         st.error("未识别到数据。")
-        st.text_area("调试信息", st.session_state.raw_text)
+        st.text_area("OCR原始内容", st.session_state.raw_text)
     
     if st.button("🔄 重新开始"):
         for key in list(st.session_state.keys()):
