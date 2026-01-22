@@ -15,15 +15,15 @@ import csv
 
 # --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
-USER_PASSWORD = "2026"  # ✅ 恢复普通用户密码
+USER_PASSWORD = "2026"  # ✅ 普通用户密码
 ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v30.0", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v30.2", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 CSS 样式 (保持 v29 不变) 🔥🔥🔥
+# 🔥🔥🔥 CSS 样式 🔥🔥🔥
 st.markdown("""
     <style>
         /* 1. 隐藏默认页脚和菜单 */
@@ -42,7 +42,8 @@ st.markdown("""
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 70vh; /* 垂直居中 */
+            height: auto;
+            margin-bottom: 20px;
         }
         
         .login-box {
@@ -52,13 +53,13 @@ st.markdown("""
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             text-align: center;
             max-width: 400px;
-            width: 90%;
+            width: 100%; /* 配合外部column控制宽度 */
             margin: auto;
             overflow: hidden;
             border: 1px solid #f0f0f0;
         }
 
-        /* 顶部横幅图片 */
+        /* 顶部横幅图片 - 居中截取 */
         .login-banner-image {
             width: 100%;
             height: 200px;
@@ -67,7 +68,7 @@ st.markdown("""
             background-repeat: no-repeat;
         }
 
-        /* 登录框内容区域 */
+        /* 登录框下半部分内容 */
         .login-content-wrapper {
             padding: 2rem 2.5rem 2.5rem 2.5rem;
         }
@@ -77,7 +78,7 @@ st.markdown("""
             margin-bottom: 1.5rem;
         }
 
-        /* 按钮样式微调 */
+        /* 按钮样式 */
         div.stButton > button {
             width: 100%;
             border-radius: 12px;
@@ -93,11 +94,6 @@ st.markdown("""
             border-left: 5px solid #007bff;
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
             margin-bottom: 10px;
-        }
-        
-        @media (max-width: 768px) {
-            [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 10px; }
-            [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; }
         }
     </style>
 """, unsafe_allow_html=True)
@@ -147,11 +143,31 @@ def to_wgs84(v1, v2, cm, swap):
 def generate_kmz(df, coord_mode, cm=0):
     kml = simplekml.Kml()
     valid_count = 0
+    # 智能列名匹配列表
+    keys_v1 = ["纬度/X", "纬度", "Latitude", "lat", "Lat", "X", "x"]
+    keys_v2 = ["经度/Y", "经度", "Longitude", "lon", "Lon", "Y", "y"]
+    keys_id = ["编号", "ID", "id", "Name", "name"]
+
     for i, row in df.iterrows():
         try:
-            raw_v1 = row.get("纬度/X", row.get("Latitude", row.get("lat", 0)))
-            raw_v2 = row.get("经度/Y", row.get("Longitude", row.get("lon", 0)))
-            name = str(row.get("编号", row.get("ID", f"P{i+1}")))
+            raw_v1 = 0
+            for k in keys_v1:
+                if k in row:
+                    raw_v1 = row[k]
+                    break
+            
+            raw_v2 = 0
+            for k in keys_v2:
+                if k in row:
+                    raw_v2 = row[k]
+                    break
+            
+            name = f"P{i+1}"
+            for k in keys_id:
+                if k in row:
+                    name = str(row[k])
+                    break
+
             def clean_ai_val(val):
                 if isinstance(val, (int, float)): return float(val)
                 s_str = str(val).upper().replace('°', ' ').replace("'", ' ').replace('"', ' ').replace(':', ' ')
@@ -160,14 +176,17 @@ def generate_kmz(df, coord_mode, cm=0):
                 elif len(parts) >= 2: return float(parts[0]) + float(parts[1])/60
                 elif len(parts) == 1: return float(parts[0])
                 return 0.0
+
             v1 = clean_ai_val(raw_v1)
             v2 = clean_ai_val(raw_v2)
+            
             lat, lon = 0, 0
             if coord_mode != "CGCS2000": lat, lon = (v1, v2) if v1 < v2 else (v2, v1)
             else:
                 res, msg = to_wgs84(v1, v2, cm, False)
                 if res: lat, lon = res, msg
                 else: continue
+            
             if abs(lat) > 0.1 and abs(lon) > 0.1:
                 kml.newpoint(name=name, coords=[(lon, lat)])
                 valid_count += 1
@@ -204,78 +223,75 @@ def recognize_image_with_zhipu(image):
 if 'user_role' not in st.session_state:
     st.session_state.user_role = None 
 if 'login_mode' not in st.session_state:
-    st.session_state.login_mode = 'select' # select, user_input, admin_input
+    st.session_state.login_mode = 'select'
 
-# --- 1. 登录界面 (三段式逻辑) ---
+# --- 1. 登录界面 (居中布局) ---
 if st.session_state.user_role is None:
     logo_b64 = get_local_image_base64(LOGO_FILENAME)
     bg_style = f"background-image: url('{logo_b64}');" if logo_b64 else "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
 
-    st.markdown(f"""
-        <div class='login-wrapper'>
-            <div class='login-box'>
-                <div class='login-banner-image' style="{bg_style}"></div>
-                <div class='login-content-wrapper'>
-                    <div class='login-title'>力力坐标工具</div>
-    """, unsafe_allow_html=True)
+    # 使用 Columns 进行布局居中
+    # 使用 [2, 1, 2] 的比例，中间的 column 宽度适中，适合放登录框
+    c_left, c_center, c_right = st.columns([2, 1, 2])
     
-    # 🔵 状态 A: 初始选择界面
-    if st.session_state.login_mode == 'select':
-        if st.button("🚀 普通用户登录", type="primary"):
-            st.session_state.login_mode = 'user_input' # 进入用户输入模式
-            st.rerun()
+    with c_center:
+        # 显示顶部的卡片（图片+标题）
+        st.markdown(f"""
+            <div class='login-wrapper'>
+                <div class='login-box'>
+                    <div class='login-banner-image' style="{bg_style}"></div>
+                    <div class='login-content-wrapper'>
+                        <div class='login-title'>力力坐标工具</div>
+        """, unsafe_allow_html=True)
         
-        st.write("") 
-        
-        if st.button("🛡️ 管理员登录"):
-            st.session_state.login_mode = 'admin_input' # 进入管理员输入模式
-            st.rerun()
+        # 内部逻辑：根据 login_mode 显示不同组件
+        if st.session_state.login_mode == 'select':
+            if st.button("🚀 普通用户登录", type="primary"):
+                st.session_state.login_mode = 'user_input'
+                st.rerun()
+            st.write("") # 增加一点垂直间距
+            if st.button("🛡️ 管理员登录"):
+                st.session_state.login_mode = 'admin_input'
+                st.rerun()
 
-    # 🔵 状态 B: 普通用户密码输入
-    elif st.session_state.login_mode == 'user_input':
-        st.caption("🔒 请输入普通用户密码")
-        with st.form("user_login_form"):
-            password = st.text_input("用户密码", type="password", label_visibility="collapsed")
-            submit = st.form_submit_button("解锁进入", type="primary")
-            
-            if submit:
-                if password == USER_PASSWORD:
-                    st.session_state.user_role = 'user'
-                    st.session_state.login_mode = 'select'
-                    log_event("Login", "User Access")
-                    st.toast("欢迎回来！")
-                    st.rerun()
-                else:
-                    st.error("密码错误")
-        if st.button("⬅️ 返回"):
-            st.session_state.login_mode = 'select'
-            st.rerun()
+        elif st.session_state.login_mode == 'user_input':
+            st.caption("🔒 请输入普通用户密码")
+            with st.form("user_login_form"):
+                password = st.text_input("用户密码", type="password", label_visibility="collapsed")
+                submit = st.form_submit_button("解锁进入", type="primary")
+                if submit:
+                    if password == USER_PASSWORD:
+                        st.session_state.user_role = 'user'
+                        st.session_state.login_mode = 'select'
+                        log_event("Login", "User Access")
+                        st.toast("欢迎回来！")
+                        st.rerun()
+                    else: st.error("密码错误")
+            if st.button("⬅️ 返回"):
+                st.session_state.login_mode = 'select'
+                st.rerun()
 
-    # 🔵 状态 C: 管理员密码输入
-    elif st.session_state.login_mode == 'admin_input':
-        st.caption("🔒 请输入管理员密码")
-        with st.form("admin_login_form"):
-            password = st.text_input("管理员密码", type="password", label_visibility="collapsed")
-            submit = st.form_submit_button("解锁后台", type="primary")
-            
-            if submit:
-                if password == ADMIN_PASSWORD:
-                    st.session_state.user_role = 'admin'
-                    st.session_state.login_mode = 'select'
-                    st.toast("管理员身份已验证")
-                    st.rerun()
-                else:
-                    st.error("密码错误")
-        if st.button("⬅️ 返回"):
-            st.session_state.login_mode = 'select'
-            st.rerun()
+        elif st.session_state.login_mode == 'admin_input':
+            st.caption("🔒 请输入管理员密码")
+            with st.form("admin_login_form"):
+                password = st.text_input("管理员密码", type="password", label_visibility="collapsed")
+                submit = st.form_submit_button("解锁后台", type="primary")
+                if submit:
+                    if password == ADMIN_PASSWORD:
+                        st.session_state.user_role = 'admin'
+                        st.session_state.login_mode = 'select'
+                        st.toast("管理员身份已验证")
+                        st.rerun()
+                    else: st.error("密码错误")
+            if st.button("⬅️ 返回"):
+                st.session_state.login_mode = 'select'
+                st.rerun()
 
-    st.markdown("</div></div></div>", unsafe_allow_html=True) 
+        st.markdown("</div></div></div>", unsafe_allow_html=True) # 关闭HTML标签
 
 # --- 2. 管理员后台界面 ---
 elif st.session_state.user_role == 'admin':
     st.title("🛡️ 管理员后台")
-    
     if st.sidebar.button("🔒 退出"):
         st.session_state.user_role = None
         st.rerun()
@@ -298,7 +314,6 @@ elif st.session_state.user_role == 'admin':
 # --- 3. 普通用户界面 ---
 elif st.session_state.user_role == 'user':
     
-    # 侧边栏
     with st.sidebar:
         if st.button("🔒 退出登录"):
             st.session_state.user_role = None
@@ -307,7 +322,7 @@ elif st.session_state.user_role == 'user':
         app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别"], index=2)
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v30.0")
+    st.title("力力的坐标工具 v30.2")
     
     # 模式 1: 手动
     if app_mode == "🖐️ 手动输入":
@@ -319,7 +334,6 @@ elif st.session_state.user_role == 'user':
             if coord_mode == "CGCS2000":
                 cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
                 cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
-        
         if 'manual_df' not in st.session_state:
             st.session_state.manual_df = pd.DataFrame([{"编号": "T1", "纬度/X": "", "经度/Y": ""}, {"编号": "T2", "纬度/X": "", "经度/Y": ""}])
         edited_df = st.data_editor(st.session_state.manual_df, num_rows="dynamic", use_container_width=True)
@@ -376,13 +390,11 @@ elif st.session_state.user_role == 'user':
     # 模式 3: AI
     elif app_mode == "📸 AI图片识别":
         st.header("📸 AI 识别")
-        
         if 'raw_img' not in st.session_state: st.session_state.raw_img = None
         if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
         if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
         
         img_file = st.file_uploader("图片上传 (拍照/选图)", type=['png', 'jpg', 'jpeg'])
-        
         if img_file:
             opened_img = Image.open(img_file)
             st.session_state.raw_img = ImageOps.exif_transpose(opened_img)
@@ -408,7 +420,6 @@ elif st.session_state.user_role == 'user':
         if st.session_state.parsed_df is not None:
             st.divider()
             st.subheader("结果核对")
-            
             c1, c2 = st.columns(2)
             with c1: coord_mode = st.selectbox("图片坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"], index=0)
             with c2:
@@ -416,7 +427,6 @@ elif st.session_state.user_role == 'user':
                 if coord_mode == "CGCS2000 (投影)":
                     cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
                     cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
-                else: st.empty()
             
             final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", use_container_width=True)
             
