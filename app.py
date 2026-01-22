@@ -20,7 +20,7 @@ ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v26.1 (Mobile Tweaks)", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v26.3", page_icon="📲", layout="wide")
 
 # 🔥🔥🔥 核心：深度定制 CSS 以实现逼真的 iOS 风格 🔥🔥🔥
 st.markdown("""
@@ -90,50 +90,47 @@ st.markdown("""
         div.stButton > button:active { transform: scale(0.97); background-color: #D1D1D6; }
         button[kind="primary"] { background-color: var(--ios-blue) !important; color: white !important; }
 
-        /* --- 6. 登录界面专用样式 (微调优化) --- */
+        /* --- 6. 登录界面专用样式 (v26.3 全屏 Banner 版) --- */
         .login-wrapper { display: flex; justify-content: center; align-items: center; min-height: 70vh; }
         .login-box {
             background: var(--ios-card-bg);
-            /* padding: 3rem 2.5rem; <-- 旧值，太大 */
-            padding: 2.5rem 2rem; /* <-- 新值：减小内边距 */
+            /* padding: 2.5rem 2rem;  <-- 移除原有内边距 */
+            padding: 0; /* 清空内边距，让图片贴边 */
             border-radius: 32px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.06);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
             text-align: center;
-            /* max-width: 420px; width: 90%; <-- 旧值 */
-            max-width: 400px; width: 94%; /* <-- 新值：在小屏上占更多宽度 */
+            max-width: 400px; width: 94%;
             margin: auto;
+            overflow: hidden; /* 关键：隐藏溢出，让图片跟随圆角裁切 */
         }
-        .login-icon { font-size: 4.5rem; margin-bottom: 0.5rem; }
+        /* 新增：顶部图片 Banner */
+        .login-header-banner {
+            width: 100%;
+            height: 180px; /* 调整Banner高度 */
+            background-size: cover;
+            background-position: center;
+            /* 不需要单独设圆角，父容器 overflow:hidden 会自动裁切 */
+        }
+        /* 新增：内容区域容器 */
+        .login-content {
+            padding: 2rem 2rem 2.5rem 2rem; /* 在这里添加内边距 */
+        }
+
         .login-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 2rem; color: #000;}
 
         /* --- 7. 管理员卡片 --- */
         .metric-card {
             background-color: var(--ios-card-bg); padding: 24px; border-radius: 22px;
             box-shadow: 0 8px 20px rgba(0,0,0,0.03); text-align: center;
-            height: 100%; /* 确保高度一致 */
+            height: 100%;
         }
         .metric-card h3 { font-size: 0.85rem; color: var(--ios-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
         .metric-card h1 { font-size: 2.5rem; font-weight: 800; color: var(--ios-text-primary); margin: 0; line-height: 1.1;}
         
-        /* --- 8. 移动端适配微调 (关键修改) --- */
-        /* 在小屏幕上强制 Admin 卡片堆叠显示，而不是挤成三列 */
+        /* --- 8. 移动端适配微调 --- */
         @media (max-width: 768px) {
-            /* 找到包裹三个卡片的容器，强制它换行 */
-            [data-testid="stHorizontalBlock"] {
-                flex-wrap: wrap;
-                gap: 16px; /* 卡片间距 */
-            }
-            /* 让每个卡片占满一行 */
-            [data-testid="stHorizontalBlock"] > div {
-                min-width: 100% !important;
-                flex: 1 1 auto !important;
-                margin-bottom: 8px;
-            }
-        }
-        /* 调整登录框在超小屏上的内边距 */
-        @media (max-width: 380px) {
-            .login-box { padding: 2rem 1.5rem; }
-            .login-title { font-size: 1.6rem; }
+            [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 16px; }
+            [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; flex: 1 1 auto !important; margin-bottom: 8px; }
         }
         
         img { border-radius: 16px; }
@@ -229,18 +226,23 @@ def recognize_image_with_zhipu(image):
         return response.choices[0].message.content
     except Exception as e: return f"CRITICAL_ERROR: {str(e)}"
 
-# ================= 🚀 主程序逻辑 (iOS 风格重构) =================
+# ================= 🚀 主程序逻辑 =================
 
 if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
-# --- 1. 登录界面 (iOS弹窗风格，微调) ---
+# --- 1. 登录界面 (v26.3 全屏 Banner 版) ---
 if st.session_state.user_role is None:
-    st.markdown("""
+    # 使用一张精选的地图/抽象主题图片
+    header_image_url = "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=800&q=80"
+    
+    # HTML 结构重构：Login Box -> Header Banner + Content Div
+    st.markdown(f"""
         <div class='login-wrapper'>
             <div class='login-box'>
-                <div class='login-icon'>📲</div>
-                <div class='login-title'>力力坐标工具</div>
+                <div class='login-header-banner' style='background-image: url("{header_image_url}");'></div>
+                <div class='login-content'>
+                    <div class='login-title'>力力坐标工具</div>
     """, unsafe_allow_html=True)
     
     with st.form("login_form"):
@@ -261,9 +263,9 @@ if st.session_state.user_role is None:
             else:
                 st.error("密码错误")
     
-    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown("</div></div></div>", unsafe_allow_html=True) # 关闭所有 div
 
-# --- 2. 管理员后台界面 (iOS Widget风格，微调) ---
+# --- 2. 管理员后台界面 (保持不变) ---
 elif st.session_state.user_role == 'admin':
     st.title("管理员控制台")
     
@@ -279,7 +281,6 @@ elif st.session_state.user_role == 'admin':
         ai_calls = len(df_logs[df_logs['Action'] == 'AI Recognize'])
         last_access = df_logs['Time'].iloc[-1] if not df_logs.empty else "无数据"
 
-        # iOS Widget 风格卡片 (手机端会自动堆叠)
         c1, c2, c3 = st.columns(3)
         with c1: st.markdown(f"<div class='metric-card'><h3>总使用量</h3><h1>{total_visits}</h1></div>", unsafe_allow_html=True)
         with c2: st.markdown(f"<div class='metric-card'><h3>AI 调用</h3><h1>{ai_calls}</h1></div>", unsafe_allow_html=True)
@@ -292,7 +293,7 @@ elif st.session_state.user_role == 'admin':
         st.download_button("📥 导出日志记录", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
 
 
-# --- 3. 普通用户界面 (iOS App风格) ---
+# --- 3. 普通用户界面 (保持不变) ---
 elif st.session_state.user_role == 'user':
     
     with st.sidebar:
