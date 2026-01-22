@@ -21,12 +21,12 @@ LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v27.0", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v28.0", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 CSS：只针对登录页和管理员后台，不动主页！！！ 🔥🔥🔥
+# 🔥🔥🔥 CSS：保持 v27.0 样式不变 🔥🔥🔥
 st.markdown("""
     <style>
-        /* 1. 隐藏默认页脚和菜单 (这个还是要藏的，比较干净) */
+        /* 1. 隐藏默认页脚和菜单 */
         footer {display: none !important;}
         #MainMenu {display: none !important;}
         .stDeployButton {display: none !important;}
@@ -47,23 +47,22 @@ st.markdown("""
         
         .login-box {
             background: #ffffff;
-            padding: 0; /* 这里的 0 必须保留，为了让图片贴边 */
-            border-radius: 24px; /* 圆角 */
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); /* 阴影 */
+            padding: 0; /* 0内边距让图片贴边 */
+            border-radius: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             text-align: center;
             max-width: 400px;
             width: 90%;
             margin: auto;
-            overflow: hidden; /* 关键：裁切图片圆角 */
+            overflow: hidden; /* 裁切图片圆角 */
             border: 1px solid #f0f0f0;
         }
 
-        /* 顶部横幅图片 (Banner) */
+        /* 顶部横幅图片 (Banner) - 居中截取 */
         .login-banner-image {
             width: 100%;
-            height: 200px; /* 图片区域高度 */
-            background-size: cover; /* 充满容器 */
-            /* 🔥🔥🔥 核心修改：强制图片居中对齐，截取中间区域 🔥🔥🔥 */
+            height: 200px;
+            background-size: cover;
             background-position: center center !important; 
             background-repeat: no-repeat;
         }
@@ -90,14 +89,13 @@ st.markdown("""
         
         /* ================= 移动端适配 ================= */
         @media (max-width: 768px) {
-            /* 管理员卡片堆叠 */
             [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 10px; }
             [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; }
         }
     </style>
 """, unsafe_allow_html=True)
 
-# ================= 工具函数 (保持原样) =================
+# ================= 工具函数 =================
 
 def get_local_image_base64(path):
     try:
@@ -199,20 +197,16 @@ def recognize_image_with_zhipu(image):
 if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
-# --- 1. 登录界面 (Banner + Center Image) ---
+# --- 1. 登录界面 (保持 v27.0 居中 Banner) ---
 if st.session_state.user_role is None:
-    # 尝试读取本地 logo.png
     logo_b64 = get_local_image_base64(LOGO_FILENAME)
     
     bg_style = ""
     if logo_b64:
-        # 强制居中对齐图片
         bg_style = f"background-image: url('{logo_b64}');"
     else:
-        # 兜底背景
         bg_style = "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
 
-    # HTML 结构
     st.markdown(f"""
         <div class='login-wrapper'>
             <div class='login-box'>
@@ -222,7 +216,6 @@ if st.session_state.user_role is None:
     """, unsafe_allow_html=True)
     
     with st.form("login_form"):
-        # 这里的控件会使用 Streamlit 默认样式（只是因为在 form 里会比较紧凑）
         password = st.text_input("请输入访问密码", type="password")
         st.write("")
         submit = st.form_submit_button("解锁进入")
@@ -240,7 +233,7 @@ if st.session_state.user_role is None:
     
     st.markdown("</div></div></div>", unsafe_allow_html=True) 
 
-# --- 2. 管理员后台界面 (保持卡片布局，但用回默认样式) ---
+# --- 2. 管理员后台界面 ---
 elif st.session_state.user_role == 'admin':
     st.title("🛡️ 管理员后台")
     
@@ -263,7 +256,7 @@ elif st.session_state.user_role == 'admin':
     st.download_button("📥 导出 CSV", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
 
 
-# --- 3. 普通用户界面 (100% 还原回默认样式) ---
+# --- 3. 普通用户界面 ---
 elif st.session_state.user_role == 'user':
     
     # 侧边栏
@@ -272,10 +265,11 @@ elif st.session_state.user_role == 'user':
             st.session_state.user_role = None
             st.rerun() 
         st.divider()
-        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📊 Excel导入", "📸 AI图片识别"], index=2)
+        # 🔥🔥🔥 修改点 1：选项名称改成“📄 文本导入” 🔥🔥🔥
+        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别"], index=2)
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v27.0")
+    st.title("力力的坐标工具 v28.0")
     
     # 模式 1: 手动
     if app_mode == "🖐️ 手动输入":
@@ -300,13 +294,25 @@ elif st.session_state.user_role == 'user':
                 with open("manual.kmz", "rb") as f: st.download_button("📥 下载文件", f, "manual.kmz", type="primary")
             else: st.error("数据无效")
 
-    # 模式 2: Excel
-    elif app_mode == "📊 Excel导入":
-        st.header("📊 Excel 导入")
-        excel_file = st.file_uploader("上传 Excel", type=['xlsx', 'xls'])
-        if excel_file:
+    # 模式 2: 文本导入 (原 Excel 导入)
+    # 🔥🔥🔥 修改点 2：改名为“文本导入”，并支持 TXT/CSV 🔥🔥🔥
+    elif app_mode == "📄 文本导入":
+        st.header("📄 文本导入 (Excel/TXT/CSV)")
+        
+        # 🔥 支持 txt 和 csv 后缀
+        file_buffer = st.file_uploader("上传文件", type=['xlsx', 'xls', 'csv', 'txt'])
+        
+        if file_buffer:
             try:
-                df = pd.read_excel(excel_file)
+                # 🔥 编码搞定：根据后缀名判断用什么方式读取
+                fname = file_buffer.name.lower()
+                if fname.endswith(('.csv', '.txt')):
+                    # 尝试读取文本文件，engine='python' 可以自动嗅探分隔符
+                    df = pd.read_csv(file_buffer, sep=None, engine='python')
+                else:
+                    # 否则默认为 Excel
+                    df = pd.read_excel(file_buffer)
+                
                 st.success("读取成功")
                 cols = list(df.columns)
                 c1, c2, c3 = st.columns(3)
@@ -330,12 +336,13 @@ elif st.session_state.user_role == 'user':
                 final_df = st.data_editor(proc_df, num_rows="dynamic", use_container_width=True)
                 
                 if st.button("🚀 生成 KMZ", type="primary"):
-                    log_event("Generate KMZ", "Excel")
+                    log_event("Generate KMZ", "Text Import")
                     kml, count = generate_kmz(final_df, coord_mode, cm)
                     if count > 0:
-                        kml.save("excel.kmz")
-                        with open("excel.kmz", "rb") as f: st.download_button("📥 下载文件", f, "excel.kmz", type="primary")
-            except: st.error("读取失败")
+                        kml.save("text_import.kmz")
+                        with open("text_import.kmz", "rb") as f: st.download_button("📥 下载文件", f, "text_import.kmz", type="primary")
+            except Exception as e:
+                st.error(f"读取失败: {str(e)}")
 
     # 模式 3: AI
     elif app_mode == "📸 AI图片识别":
