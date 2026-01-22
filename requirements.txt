@@ -4,6 +4,6 @@ pyproj
 Pillow
 pandas
 numpy
-zhipuai
+zhipuai>=2.0.0
 openpyxl
 streamlit-cropper
