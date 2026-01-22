@@ -16,7 +16,7 @@ from streamlit_cropper import st_cropper
 # 🔥 你的 Key
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
 
-st.set_page_config(page_title="力力的坐标工具 v22.2 (智能格式)", page_icon="🤖", layout="centered")
+st.set_page_config(page_title="力力的坐标工具 v22.3 (手机版)", page_icon="📸", layout="centered")
 
 # ================= 工具函数 =================
 
@@ -93,7 +93,6 @@ def recognize_image_with_zhipu(image):
                     "content": [
                         {
                             "type": "text",
-                            # 🔥 关键修改：更智能的 Prompt，防止 AI 瞎改格式
                             "text": """
                             请识别图片中的表格数据。直接提取 编号、纬度/X、经度/Y。
                             请直接返回纯 JSON 数组字符串。
@@ -125,7 +124,7 @@ def recognize_image_with_zhipu(image):
 
 # ================= 界面主逻辑 =================
 
-st.title("🤖 力力的坐标工具 v22.2 (智能格式)")
+st.title("📸 力力的坐标工具 v22.3")
 
 # --- 侧边栏 ---
 with st.sidebar:
@@ -198,16 +197,25 @@ elif app_mode == "📸 AI图片识别":
     if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
     if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
 
-    st.header("📸 AI 视觉识别 (智谱GLM-4V)")
+    st.header("📸 AI 视觉识别 (Flash版)")
     
-    img_file = st.file_uploader("上传图片", type=['png', 'jpg', 'jpeg'])
+    # 🔥🔥🔥 核心修改：增加手机拍照支持 🔥🔥🔥
+    input_method = st.radio("请选择图片来源：", ["📂 上传图片 (相册)", "📷 直接拍照"], horizontal=True)
+    
+    img_file = None
+    if input_method == "📷 直接拍照":
+        img_file = st.camera_input("点击下方按钮拍照")
+    else:
+        img_file = st.file_uploader("上传图片", type=['png', 'jpg', 'jpeg'])
     
     if img_file:
         st.session_state.raw_img = Image.open(img_file)
-        st.image(st.session_state.raw_img, caption="原始图片", use_column_width=True)
+        # 如果是上传的，显示预览；如果是拍照的，camera_input 自带预览，这里就不重复显示了
+        if input_method == "📂 上传图片 (相册)":
+            st.image(st.session_state.raw_img, caption="图片预览", use_column_width=True)
         
         if st.button("✨ 让智谱AI识别表格", type="primary"):
-            with st.spinner("🚀 AI 正在努力识图中，请稍等..."):
+            with st.spinner("🚀 AI 正在努力识图中..."):
                 result = recognize_image_with_zhipu(st.session_state.raw_img)
             
             if result.startswith("CRITICAL_ERROR"):
@@ -221,7 +229,7 @@ elif app_mode == "📸 AI图片识别":
                 try:
                     data = json.loads(clean_result)
                     st.session_state.parsed_df = pd.DataFrame(data)
-                    st.success("识别成功！请核对下方表格中的原始数据。")
+                    st.success("识别成功！")
                 except:
                     st.error("AI 返回的数据格式有误，请在下方手动修正 JSON。")
 
@@ -232,11 +240,11 @@ elif app_mode == "📸 AI图片识别":
             st.text_area("JSON Raw", st.session_state.ai_json_text, height=100)
 
         if st.session_state.parsed_df is not None:
-            st.caption("👇 **请核对数据**（AI现已保留原始格式，方便与图片对比）：")
+            st.caption("👇 **请核对数据**（AI已保留原始格式）：")
             
             c1, c2 = st.columns(2)
             with c1:
-                # 🔥 默认选为 Decimal，因为你这张图是小数
+                # 默认选 Decimal
                 coord_mode = st.selectbox("坐标格式选择", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"], index=0)
             cm = 0
             with c2:
@@ -244,7 +252,7 @@ elif app_mode == "📸 AI图片识别":
                     cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
                     cm = st.selectbox("中央经线 (CGCS2000必选)", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
                 else:
-                    st.empty() # 占位
+                    st.empty()
 
             final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", use_container_width=True)
             
