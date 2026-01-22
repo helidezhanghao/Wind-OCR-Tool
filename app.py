@@ -15,29 +15,26 @@ import csv
 
 # --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
-USER_PASSWORD = "2026"  # ✅ 普通用户密码
+USER_PASSWORD = "2026"  # 普通用户密码
 ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v30.2", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v30.3", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 CSS 样式 🔥🔥🔥
+# 🔥🔥🔥 CSS 样式 (完全保持 v30.2 不变) 🔥🔥🔥
 st.markdown("""
     <style>
-        /* 1. 隐藏默认页脚和菜单 */
         footer {display: none !important;}
         #MainMenu {display: none !important;}
         .stDeployButton {display: none !important;}
         
-        /* 2. 移除顶部过多空白 */
         .block-container {
             padding-top: 2rem !important;
             padding-bottom: 3rem !important;
         }
 
-        /* ================= 登录界面专用样式 ================= */
         .login-wrapper {
             display: flex;
             justify-content: center;
@@ -53,13 +50,12 @@ st.markdown("""
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             text-align: center;
             max-width: 400px;
-            width: 100%; /* 配合外部column控制宽度 */
+            width: 100%;
             margin: auto;
             overflow: hidden;
             border: 1px solid #f0f0f0;
         }
 
-        /* 顶部横幅图片 - 居中截取 */
         .login-banner-image {
             width: 100%;
             height: 200px;
@@ -68,7 +64,6 @@ st.markdown("""
             background-repeat: no-repeat;
         }
 
-        /* 登录框下半部分内容 */
         .login-content-wrapper {
             padding: 2rem 2.5rem 2.5rem 2.5rem;
         }
@@ -78,7 +73,6 @@ st.markdown("""
             margin-bottom: 1.5rem;
         }
 
-        /* 按钮样式 */
         div.stButton > button {
             width: 100%;
             border-radius: 12px;
@@ -86,7 +80,6 @@ st.markdown("""
             font-weight: 600;
         }
 
-        /* ================= 管理员后台卡片样式 ================= */
         .metric-card {
             background-color: #f8f9fa;
             padding: 20px;
@@ -143,7 +136,6 @@ def to_wgs84(v1, v2, cm, swap):
 def generate_kmz(df, coord_mode, cm=0):
     kml = simplekml.Kml()
     valid_count = 0
-    # 智能列名匹配列表
     keys_v1 = ["纬度/X", "纬度", "Latitude", "lat", "Lat", "X", "x"]
     keys_v2 = ["经度/Y", "经度", "Longitude", "lon", "Lon", "Y", "y"]
     keys_id = ["编号", "ID", "id", "Name", "name"]
@@ -225,17 +217,15 @@ if 'user_role' not in st.session_state:
 if 'login_mode' not in st.session_state:
     st.session_state.login_mode = 'select'
 
-# --- 1. 登录界面 (居中布局) ---
+# --- 1. 登录界面 ---
 if st.session_state.user_role is None:
     logo_b64 = get_local_image_base64(LOGO_FILENAME)
     bg_style = f"background-image: url('{logo_b64}');" if logo_b64 else "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
 
-    # 使用 Columns 进行布局居中
-    # 使用 [2, 1, 2] 的比例，中间的 column 宽度适中，适合放登录框
+    # 外层居中列
     c_left, c_center, c_right = st.columns([2, 1, 2])
     
     with c_center:
-        # 显示顶部的卡片（图片+标题）
         st.markdown(f"""
             <div class='login-wrapper'>
                 <div class='login-box'>
@@ -244,21 +234,24 @@ if st.session_state.user_role is None:
                         <div class='login-title'>力力坐标工具</div>
         """, unsafe_allow_html=True)
         
-        # 内部逻辑：根据 login_mode 显示不同组件
+        # 🔥🔥🔥 核心修改：使用嵌套列强制按钮居中 🔥🔥🔥
         if st.session_state.login_mode == 'select':
-            if st.button("🚀 普通用户登录", type="primary"):
-                st.session_state.login_mode = 'user_input'
-                st.rerun()
-            st.write("") # 增加一点垂直间距
-            if st.button("🛡️ 管理员登录"):
-                st.session_state.login_mode = 'admin_input'
-                st.rerun()
+            # 使用 [1, 3, 1] 的比例，左右留空，中间放按钮
+            b_gap1, b_content, b_gap2 = st.columns([1, 3, 1])
+            with b_content:
+                if st.button("🚀 普通用户登录", type="primary", use_container_width=True):
+                    st.session_state.login_mode = 'user_input'
+                    st.rerun()
+                st.write("") # 垂直间距
+                if st.button("🛡️ 管理员登录", use_container_width=True):
+                    st.session_state.login_mode = 'admin_input'
+                    st.rerun()
 
         elif st.session_state.login_mode == 'user_input':
             st.caption("🔒 请输入普通用户密码")
             with st.form("user_login_form"):
                 password = st.text_input("用户密码", type="password", label_visibility="collapsed")
-                submit = st.form_submit_button("解锁进入", type="primary")
+                submit = st.form_submit_button("解锁进入", type="primary", use_container_width=True)
                 if submit:
                     if password == USER_PASSWORD:
                         st.session_state.user_role = 'user'
@@ -267,15 +260,18 @@ if st.session_state.user_role is None:
                         st.toast("欢迎回来！")
                         st.rerun()
                     else: st.error("密码错误")
-            if st.button("⬅️ 返回"):
-                st.session_state.login_mode = 'select'
-                st.rerun()
+            # 返回按钮也居中
+            b_gap1, b_back, b_gap2 = st.columns([1, 3, 1])
+            with b_back:
+                if st.button("⬅️ 返回", use_container_width=True):
+                    st.session_state.login_mode = 'select'
+                    st.rerun()
 
         elif st.session_state.login_mode == 'admin_input':
             st.caption("🔒 请输入管理员密码")
             with st.form("admin_login_form"):
                 password = st.text_input("管理员密码", type="password", label_visibility="collapsed")
-                submit = st.form_submit_button("解锁后台", type="primary")
+                submit = st.form_submit_button("解锁后台", type="primary", use_container_width=True)
                 if submit:
                     if password == ADMIN_PASSWORD:
                         st.session_state.user_role = 'admin'
@@ -283,13 +279,16 @@ if st.session_state.user_role is None:
                         st.toast("管理员身份已验证")
                         st.rerun()
                     else: st.error("密码错误")
-            if st.button("⬅️ 返回"):
-                st.session_state.login_mode = 'select'
-                st.rerun()
+            # 返回按钮也居中
+            b_gap1, b_back, b_gap2 = st.columns([1, 3, 1])
+            with b_back:
+                if st.button("⬅️ 返回", use_container_width=True):
+                    st.session_state.login_mode = 'select'
+                    st.rerun()
 
-        st.markdown("</div></div></div>", unsafe_allow_html=True) # 关闭HTML标签
+        st.markdown("</div></div></div>", unsafe_allow_html=True)
 
-# --- 2. 管理员后台界面 ---
+# --- 2. 管理员后台界面 (不变) ---
 elif st.session_state.user_role == 'admin':
     st.title("🛡️ 管理员后台")
     if st.sidebar.button("🔒 退出"):
@@ -311,7 +310,7 @@ elif st.session_state.user_role == 'admin':
     st.download_button("📥 导出 CSV", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
 
 
-# --- 3. 普通用户界面 ---
+# --- 3. 普通用户界面 (不变) ---
 elif st.session_state.user_role == 'user':
     
     with st.sidebar:
@@ -322,9 +321,8 @@ elif st.session_state.user_role == 'user':
         app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别"], index=2)
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v30.2")
+    st.title("力力的坐标工具 v30.3")
     
-    # 模式 1: 手动
     if app_mode == "🖐️ 手动输入":
         st.header("🖐️ 手动录入")
         c1, c2 = st.columns(2)
@@ -346,7 +344,6 @@ elif st.session_state.user_role == 'user':
                 with open("manual.kmz", "rb") as f: st.download_button("📥 下载文件", f, "manual.kmz", type="primary")
             else: st.error("数据无效")
 
-    # 模式 2: 文本导入
     elif app_mode == "📄 文本导入":
         st.header("📄 文本导入 (Excel/TXT/CSV)")
         file_buffer = st.file_uploader("上传文件", type=['xlsx', 'xls', 'csv', 'txt'])
@@ -387,7 +384,6 @@ elif st.session_state.user_role == 'user':
                         with open("text_import.kmz", "rb") as f: st.download_button("📥 下载文件", f, "text_import.kmz", type="primary")
             except Exception as e: st.error(f"读取失败: {str(e)}")
 
-    # 模式 3: AI
     elif app_mode == "📸 AI图片识别":
         st.header("📸 AI 识别")
         if 'raw_img' not in st.session_state: st.session_state.raw_img = None
