@@ -3,7 +3,7 @@ import simplekml
 import re
 from pyproj import CRS, Transformer
 import os
-from PIL import Image
+from PIL import Image, ImageOps # 🔥 引入 ImageOps 用来处理旋转
 import pandas as pd
 import numpy as np
 from zhipuai import ZhipuAI
@@ -17,7 +17,7 @@ from streamlit_cropper import st_cropper
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
 
 # layout="wide" 让手机端尽量撑满
-st.set_page_config(page_title="力力的坐标工具 v22.5", page_icon="📸", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v22.6", page_icon="📸", layout="wide")
 
 # 🔥🔥🔥 CSS 样式注入：保持按钮美观大方 🔥🔥🔥
 st.markdown("""
@@ -53,7 +53,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ================= 工具函数 (保持不变) =================
+# ================= 工具函数 =================
 
 def to_wgs84(v1, v2, cm, swap):
     x, y = (v2, v1) if swap else (v1, v2)
@@ -156,7 +156,7 @@ def recognize_image_with_zhipu(image):
 
 # ================= 界面主逻辑 =================
 
-st.title("📸 力力的坐标工具 v22.5")
+st.title("📸 力力的坐标工具 v22.6")
 
 # --- 侧边栏 ---
 with st.sidebar:
@@ -229,17 +229,17 @@ elif app_mode == "📸 AI图片识别":
     if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
     if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
 
-    # st.header("📸 AI 视觉识别") # 隐藏标题，节省空间
+    # st.header("📸 AI 视觉识别") 
     
-    # 🔥 核心修改：仅保留这一个清爽的上传入口，改名为“图片上传”
-    # 在手机上点击这个框，系统会自动弹出“拍照 / 图库 / 文件”的选择菜单
     img_file = st.file_uploader("📸 图片上传 (点这里拍照或选图)", type=['png', 'jpg', 'jpeg'])
     
     if img_file:
-        st.session_state.raw_img = Image.open(img_file)
-        st.image(st.session_state.raw_img, caption="预览", use_column_width=True)
+        # 🔥🔥🔥 核心修复：自动旋转图片，防止竖拍变横拍 🔥🔥🔥
+        opened_img = Image.open(img_file)
+        st.session_state.raw_img = ImageOps.exif_transpose(opened_img)
         
-        # 按钮样式已经通过 CSS 变大
+        st.image(st.session_state.raw_img, caption="预览 (已自动扶正)", use_column_width=True)
+        
         if st.button("✨ 开始 AI 识别", type="primary"):
             with st.spinner("🚀 AI 正在努力识图中..."):
                 result = recognize_image_with_zhipu(st.session_state.raw_img)
