@@ -20,7 +20,7 @@ ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v26.0 (Deep iOS)", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v26.2", page_icon="📲", layout="wide")
 
 # 🔥🔥🔥 核心：深度定制 CSS 以实现逼真的 iOS 风格 🔥🔥🔥
 st.markdown("""
@@ -32,119 +32,106 @@ st.markdown("""
             --ios-blue: #007AFF;           /* 官方蓝色 */
             --ios-text-primary: #000000;   /* 主要文本 */
             --ios-text-secondary: #8E8E93; /* 次要文本 */
-            --ios-input-bg: #EBEBF0;       /* 输入框填充灰 (关键!) */
+            --ios-input-bg: #EBEBF0;       /* 输入框填充灰 */
             --ios-divider: #C6C6C8;        /* 分割线 */
         }
 
         /* --- 1. 全局设置 --- */
         html, body, [class*="css"] {
-            /* 优先使用苹果系统字体 */
             font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
             background-color: var(--ios-bg) !important;
             color: var(--ios-text-primary);
         }
-        /* 顶部留白，模拟导航栏下方 */
         .block-container {
             padding-top: 1rem !important;
             padding-bottom: 4rem !important;
             max-width: 960px;
         }
-        /* 彻底隐藏底部 Footer 和菜单按钮 */
         footer {display: none !important;}
         #MainMenu {display: none !important;}
         .stDeployButton {display: none !important;}
 
         /* --- 2. 标题与文本 --- */
-        h1 {
-            font-weight: 800 !important;
-            font-size: 2rem !important;
-            letter-spacing: -0.5px;
-            margin-bottom: 1rem !important;
-        }
+        h1 { font-weight: 800 !important; font-size: 2rem !important; letter-spacing: -0.5px; margin-bottom: 1rem !important; }
         h2, h3 { font-weight: 700 !important; color: #1C1C1E; }
-        /* 次要文本样式 */
         .stCaption, p small { color: var(--ios-text-secondary) !important; font-size: 0.95rem; }
-        /* 分割线 */
         hr { border-color: var(--ios-divider); opacity: 0.5; margin: 1.5em 0; }
 
-        /* --- 3. iOS 风格卡片容器 (核心魔法) --- */
-        /* 捕捉主要内容块，变为圆角卡片 */
+        /* --- 3. iOS 风格卡片容器 --- */
         [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] {
              background-color: var(--ios-card-bg);
-             border-radius: 20px; /* iOS 标准大圆角 */
+             border-radius: 20px;
              padding: 24px;
-             /* 极其柔和、扩散的阴影，模拟浮层感 */
              box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.03);
-             margin-bottom: 24px;
-             border: none;
+             margin-bottom: 24px; border: none;
         }
-        /* 侧边栏纯白背景 */
         [data-testid="stSidebar"] { background-color: var(--ios-card-bg); border-right: 1px solid #E5E5EA; }
 
-        /* --- 4. iOS 控件风格 (关键升级!) --- */
-        /* 文本输入框：浅灰填充，无边框，大圆角 */
+        /* --- 4. iOS 控件风格 --- */
         [data-testid="stTextInput"] input {
-            background-color: var(--ios-input-bg) !important;
-            border: none !important;
-            border-radius: 12px !important;
-            height: 48px; /* 更大的触控区域 */
-            padding: 0 16px;
-            font-size: 17px;
+            background-color: var(--ios-input-bg) !important; border: none !important;
+            border-radius: 12px !important; height: 48px; padding: 0 16px; font-size: 17px;
         }
-        /* 下拉选择框：同上 */
         [data-testid="stSelectbox"] div[class*="control"] {
-            background-color: var(--ios-input-bg) !important;
-            border: none !important;
-            border-radius: 12px !important;
-            height: 48px;
+            background-color: var(--ios-input-bg) !important; border: none !important;
+            border-radius: 12px !important; height: 48px;
         }
-        /* 文件上传区域 */
         [data-testid='stFileUploader'] section {
-            border-radius: 16px;
-            background-color: var(--ios-input-bg);
-            border: 2px dashed #D1D1D6;
+            border-radius: 16px; background-color: var(--ios-input-bg); border: 2px dashed #D1D1D6;
         }
 
-        /* --- 5. 按钮美化 (胶囊形状) --- */
+        /* --- 5. 按钮美化 --- */
         div.stButton > button {
-            border-radius: 100px !important; /* 完美的胶囊/药丸形状 */
-            height: 52px;
-            font-weight: 600;
-            font-size: 17px !important;
-            border: none !important;
-            box-shadow: none !important;
-            background-color: #E5E5EA; /* 次要按钮背景 */
-            color: var(--ios-blue) !important; /* 次要按钮文字蓝 */
+            border-radius: 100px !important; height: 52px; font-weight: 600;
+            font-size: 17px !important; border: none !important; box-shadow: none !important;
+            background-color: #E5E5EA; color: var(--ios-blue) !important;
             transition: transform 0.15s ease;
         }
-        /* 按下缩放效果 */
         div.stButton > button:active { transform: scale(0.97); background-color: #D1D1D6; }
-        /* 主按钮（Primary）强调样式 */
-        button[kind="primary"] {
-            background-color: var(--ios-blue) !important;
-            color: white !important;
-        }
+        button[kind="primary"] { background-color: var(--ios-blue) !important; color: white !important; }
 
-        /* --- 6. 登录界面专用样式 --- */
+        /* --- 6. 登录界面专用样式 (美化版) --- */
         .login-wrapper { display: flex; justify-content: center; align-items: center; min-height: 70vh; }
         .login-box {
-            background: var(--ios-card-bg); padding: 3rem 2.5rem;
-            border-radius: 32px; /* 超大圆角 */
-            box-shadow: 0 20px 40px rgba(0,0,0,0.06);
-            text-align: center; max-width: 420px; width: 90%;
+            background: var(--ios-card-bg);
+            padding: 2.5rem 2rem;
+            border-radius: 32px;
+            /* 更柔和、更有层次的阴影 */
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+            text-align: center;
+            max-width: 400px; width: 94%;
+            margin: auto;
         }
-        .login-icon { font-size: 4.5rem; margin-bottom: 0.5rem; }
+        /* 新增：登录页头部图片样式 */
+        .login-header-image {
+            width: 120px; height: 120px;
+            border-radius: 24px; /* iOS 大圆角 */
+            object-fit: cover;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); /* 图片阴影 */
+        }
+        /* .login-icon { font-size: 4.5rem; margin-bottom: 0.5rem; } <-- 已移除 */
         .login-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 2rem; color: #000;}
 
-        /* --- 7. 管理员卡片 (Widget 风格) --- */
+        /* --- 7. 管理员卡片 --- */
         .metric-card {
             background-color: var(--ios-card-bg); padding: 24px; border-radius: 22px;
             box-shadow: 0 8px 20px rgba(0,0,0,0.03); text-align: center;
+            height: 100%;
         }
         .metric-card h3 { font-size: 0.85rem; color: var(--ios-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
-        .metric-card h1 { font-size: 2.8rem; font-weight: 800; color: var(--ios-text-primary); margin: 0; line-height: 1.1;}
+        .metric-card h1 { font-size: 2.5rem; font-weight: 800; color: var(--ios-text-primary); margin: 0; line-height: 1.1;}
         
-        /* 图片圆角 */
+        /* --- 8. 移动端适配微调 --- */
+        @media (max-width: 768px) {
+            [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 16px; }
+            [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; flex: 1 1 auto !important; margin-bottom: 8px; }
+        }
+        @media (max-width: 380px) {
+            .login-box { padding: 2rem 1.5rem; }
+            .login-title { font-size: 1.6rem; }
+        }
+        
         img { border-radius: 16px; }
     </style>
 """, unsafe_allow_html=True)
@@ -238,26 +225,27 @@ def recognize_image_with_zhipu(image):
         return response.choices[0].message.content
     except Exception as e: return f"CRITICAL_ERROR: {str(e)}"
 
-# ================= 🚀 主程序逻辑 (iOS 风格重构) =================
+# ================= 🚀 主程序逻辑 =================
 
 if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
-# --- 1. 登录界面 (iOS弹窗风格) ---
+# --- 1. 登录界面 (美化版) ---
 if st.session_state.user_role is None:
-    # 使用 HTML wrapper 应用 iOS 卡片样式
-    st.markdown("""
+    # 使用一张精选的地图/抽象主题图片 (来自 Unsplash)
+    header_image_url = "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=300&q=80"
+    
+    st.markdown(f"""
         <div class='login-wrapper'>
             <div class='login-box'>
-                <div class='login-icon'>📲</div>
+                <img src="{header_image_url}" class="login-header-image">
                 <div class='login-title'>力力坐标工具</div>
     """, unsafe_allow_html=True)
     
     with st.form("login_form"):
-        # 使用 placeholder 代替 label，更像原生 App
         password = st.text_input("密码", type="password", placeholder="请输入访问密码", label_visibility="collapsed")
-        st.write("") # 空隙
-        submit = st.form_submit_button("解锁进入", type="primary") # iOS 蓝色主按钮
+        st.write("")
+        submit = st.form_submit_button("解锁进入", type="primary")
         
         if submit:
             if password == USER_PASSWORD:
@@ -274,11 +262,10 @@ if st.session_state.user_role is None:
     
     st.markdown("</div></div>", unsafe_allow_html=True)
 
-# --- 2. 管理员后台界面 (iOS Widget风格) ---
+# --- 2. 管理员后台界面 (保持不变) ---
 elif st.session_state.user_role == 'admin':
     st.title("管理员控制台")
     
-    # 将内容包裹在容器中以获得卡片效果
     with st.container():
         c_btn, c_title = st.columns([1, 5])
         with c_btn:
@@ -291,7 +278,6 @@ elif st.session_state.user_role == 'admin':
         ai_calls = len(df_logs[df_logs['Action'] == 'AI Recognize'])
         last_access = df_logs['Time'].iloc[-1] if not df_logs.empty else "无数据"
 
-        # iOS Widget 风格卡片
         c1, c2, c3 = st.columns(3)
         with c1: st.markdown(f"<div class='metric-card'><h3>总使用量</h3><h1>{total_visits}</h1></div>", unsafe_allow_html=True)
         with c2: st.markdown(f"<div class='metric-card'><h3>AI 调用</h3><h1>{ai_calls}</h1></div>", unsafe_allow_html=True)
@@ -304,7 +290,7 @@ elif st.session_state.user_role == 'admin':
         st.download_button("📥 导出日志记录", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
 
 
-# --- 3. 普通用户界面 (iOS App风格) ---
+# --- 3. 普通用户界面 (保持不变) ---
 elif st.session_state.user_role == 'user':
     
     with st.sidebar:
@@ -316,10 +302,8 @@ elif st.session_state.user_role == 'user':
         st.markdown("### 模式选择")
         app_mode = st.radio("模式选择", ["🖐️ 手动输入", "📊 Excel导入", "📸 AI图片识别"], index=2, label_visibility="collapsed")
 
-    # 主标题区域
     st.title("坐标工具")
     
-    # 使用 container 包裹主要内容，形成白色大卡片
     with st.container():
         # 模式 1: 手动
         if app_mode == "🖐️ 手动输入":
@@ -401,14 +385,12 @@ elif st.session_state.user_role == 'user':
             if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
             if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
             
-            # 核心：使用 container 包裹上传组件，配合 CSS 实现 iOS 风格
             with st.container():
                 img_file = st.file_uploader("选择图片", type=['png', 'jpg', 'jpeg'], label_visibility="collapsed")
             
             if img_file:
                 opened_img = Image.open(img_file)
                 st.session_state.raw_img = ImageOps.exif_transpose(opened_img)
-                # 手动显示图片，以便添加圆角样式
                 st.markdown(f'<img src="data:image/jpeg;base64,{image_to_base64(st.session_state.raw_img)}" style="width:100%; border-radius: 16px; margin-top: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">', unsafe_allow_html=True)
                 
                 if st.button("开始识别", type="primary"):
@@ -433,7 +415,6 @@ elif st.session_state.user_role == 'user':
                 st.subheader("结果核对")
                 st.caption("确认坐标格式与识别结果一致。")
                 
-                # 结果核对区域包裹在另一个卡片容器中
                 with st.container():
                     c1, c2 = st.columns(2)
                     with c1: coord_mode = st.selectbox("图片坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"], index=0)
