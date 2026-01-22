@@ -13,10 +13,10 @@ from io import BytesIO
 from streamlit_cropper import st_cropper
 
 # --- 全局配置 ---
-# 🔥 你的新 Key (c1bc...wYQy) 已经内置在这里
+# 🔥 已更新为你提供的 Key (2026-01-22)
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
 
-st.set_page_config(page_title="力力的坐标工具 v21.7", page_icon="🤖", layout="centered")
+st.set_page_config(page_title="力力的坐标工具 v21.9", page_icon="🤖", layout="centered")
 
 # ================= 工具函数 =================
 
@@ -114,7 +114,7 @@ def recognize_image_with_zhipu(image):
 
 # ================= 界面主逻辑 =================
 
-st.title("🤖 力力的坐标工具 v21.7")
+st.title("🤖 力力的坐标工具 v21.9")
 
 # --- 侧边栏 ---
 with st.sidebar:
