@@ -21,9 +21,9 @@ LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v30.3", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v30.4", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 CSS 样式 (完全保持 v30.2 不变) 🔥🔥🔥
+# 🔥🔥🔥 CSS 样式 (保持 v30.3 不变) 🔥🔥🔥
 st.markdown("""
     <style>
         footer {display: none !important;}
@@ -234,15 +234,13 @@ if st.session_state.user_role is None:
                         <div class='login-title'>力力坐标工具</div>
         """, unsafe_allow_html=True)
         
-        # 🔥🔥🔥 核心修改：使用嵌套列强制按钮居中 🔥🔥🔥
         if st.session_state.login_mode == 'select':
-            # 使用 [1, 3, 1] 的比例，左右留空，中间放按钮
             b_gap1, b_content, b_gap2 = st.columns([1, 3, 1])
             with b_content:
                 if st.button("🚀 普通用户登录", type="primary", use_container_width=True):
                     st.session_state.login_mode = 'user_input'
                     st.rerun()
-                st.write("") # 垂直间距
+                st.write("")
                 if st.button("🛡️ 管理员登录", use_container_width=True):
                     st.session_state.login_mode = 'admin_input'
                     st.rerun()
@@ -260,7 +258,6 @@ if st.session_state.user_role is None:
                         st.toast("欢迎回来！")
                         st.rerun()
                     else: st.error("密码错误")
-            # 返回按钮也居中
             b_gap1, b_back, b_gap2 = st.columns([1, 3, 1])
             with b_back:
                 if st.button("⬅️ 返回", use_container_width=True):
@@ -279,7 +276,6 @@ if st.session_state.user_role is None:
                         st.toast("管理员身份已验证")
                         st.rerun()
                     else: st.error("密码错误")
-            # 返回按钮也居中
             b_gap1, b_back, b_gap2 = st.columns([1, 3, 1])
             with b_back:
                 if st.button("⬅️ 返回", use_container_width=True):
@@ -288,7 +284,7 @@ if st.session_state.user_role is None:
 
         st.markdown("</div></div></div>", unsafe_allow_html=True)
 
-# --- 2. 管理员后台界面 (不变) ---
+# --- 2. 管理员后台界面 ---
 elif st.session_state.user_role == 'admin':
     st.title("🛡️ 管理员后台")
     if st.sidebar.button("🔒 退出"):
@@ -310,7 +306,7 @@ elif st.session_state.user_role == 'admin':
     st.download_button("📥 导出 CSV", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
 
 
-# --- 3. 普通用户界面 (不变) ---
+# --- 3. 普通用户界面 ---
 elif st.session_state.user_role == 'user':
     
     with st.sidebar:
@@ -321,7 +317,7 @@ elif st.session_state.user_role == 'user':
         app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别"], index=2)
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v30.3")
+    st.title("力力的坐标工具 v30.4")
     
     if app_mode == "🖐️ 手动输入":
         st.header("🖐️ 手动录入")
@@ -394,7 +390,8 @@ elif st.session_state.user_role == 'user':
         if img_file:
             opened_img = Image.open(img_file)
             st.session_state.raw_img = ImageOps.exif_transpose(opened_img)
-            st.image(st.session_state.raw_img, caption="预览", use_column_width=True)
+            # 🔥 关键修改：设置宽度为 350px，不再撑满全屏 🔥
+            st.image(st.session_state.raw_img, caption="预览", width=350)
             
             if st.button("✨ 开始识别", type="primary"):
                 log_event("AI Recognize", "Start")
