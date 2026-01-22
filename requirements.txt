@@ -2,9 +2,8 @@ streamlit
 simplekml
 pyproj
 Pillow
-pytesseract
 pandas
 numpy
-opencv-python-headless
-streamlit-cropper
+zhipuai
 openpyxl
+streamlit-cropper
