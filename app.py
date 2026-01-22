@@ -13,10 +13,10 @@ from io import BytesIO
 from streamlit_cropper import st_cropper
 
 # --- 全局配置 ---
-# 🔥 已更新为你提供的 Key (2026-01-22)
+# 🔥 你的 Key (保持不变)
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
 
-st.set_page_config(page_title="力力的坐标工具 v21.9", page_icon="🤖", layout="centered")
+st.set_page_config(page_title="力力的坐标工具 v22.0 (Flash版)", page_icon="🤖", layout="centered")
 
 # ================= 工具函数 =================
 
@@ -80,13 +80,14 @@ def image_to_base64(image):
     return f"data:image/jpeg;base64,{img_str}"
 
 def recognize_image_with_zhipu(image):
-    """调用智谱 GLM-4V 进行视觉识别"""
+    """调用智谱 GLM-4V-Flash 进行视觉识别"""
     try:
         client = ZhipuAI(api_key=ZHIPU_API_KEY)
         img_base64 = image_to_base64(image)
         
         response = client.chat.completions.create(
-            model="glm-4v",
+            # 🔥 关键修改：换成了免费/便宜的 flash 模型
+            model="glm-4v-flash",
             messages=[
                 {
                     "role": "user",
@@ -114,7 +115,7 @@ def recognize_image_with_zhipu(image):
 
 # ================= 界面主逻辑 =================
 
-st.title("🤖 力力的坐标工具 v21.9")
+st.title("🤖 力力的坐标工具 v22.0 (Flash版)")
 
 # --- 侧边栏 ---
 with st.sidebar:
