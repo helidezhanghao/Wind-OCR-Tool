@@ -15,15 +15,15 @@ import csv
 
 # --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
-USER_PASSWORD = "2026"  # 用户密码
+# USER_PASSWORD = "2026"  <-- 普通用户密码已取消
 ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v28.0", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v29.0", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 CSS：保持 v27.0 样式不变 🔥🔥🔥
+# 🔥🔥🔥 CSS：保持样式 🔥🔥🔥
 st.markdown("""
     <style>
         /* 1. 隐藏默认页脚和菜单 */
@@ -47,18 +47,18 @@ st.markdown("""
         
         .login-box {
             background: #ffffff;
-            padding: 0; /* 0内边距让图片贴边 */
+            padding: 0;
             border-radius: 24px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             text-align: center;
             max-width: 400px;
             width: 90%;
             margin: auto;
-            overflow: hidden; /* 裁切图片圆角 */
+            overflow: hidden;
             border: 1px solid #f0f0f0;
         }
 
-        /* 顶部横幅图片 (Banner) - 居中截取 */
+        /* 顶部横幅图片 */
         .login-banner-image {
             width: 100%;
             height: 200px;
@@ -67,7 +67,7 @@ st.markdown("""
             background-repeat: no-repeat;
         }
 
-        /* 登录框下半部分内容 */
+        /* 登录框内容区域 */
         .login-content-wrapper {
             padding: 2rem 2.5rem 2.5rem 2.5rem;
         }
@@ -75,6 +75,14 @@ st.markdown("""
         .login-title { 
             font-size: 1.5rem; font-weight: 700; color: #333;
             margin-bottom: 1.5rem;
+        }
+
+        /* 按钮样式微调 */
+        div.stButton > button {
+            width: 100%;
+            border-radius: 12px;
+            height: 3em;
+            font-weight: 600;
         }
 
         /* ================= 管理员后台卡片样式 ================= */
@@ -87,7 +95,6 @@ st.markdown("""
             margin-bottom: 10px;
         }
         
-        /* ================= 移动端适配 ================= */
         @media (max-width: 768px) {
             [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 10px; }
             [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; }
@@ -195,17 +202,14 @@ def recognize_image_with_zhipu(image):
 # ================= 🚀 主程序逻辑 =================
 
 if 'user_role' not in st.session_state:
-    st.session_state.user_role = None
+    st.session_state.user_role = None # None, 'user', 'admin'
+if 'show_admin_input' not in st.session_state:
+    st.session_state.show_admin_input = False # 控制是否显示管理员密码框
 
-# --- 1. 登录界面 (保持 v27.0 居中 Banner) ---
+# --- 1. 登录界面 (选择身份) ---
 if st.session_state.user_role is None:
     logo_b64 = get_local_image_base64(LOGO_FILENAME)
-    
-    bg_style = ""
-    if logo_b64:
-        bg_style = f"background-image: url('{logo_b64}');"
-    else:
-        bg_style = "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
+    bg_style = f"background-image: url('{logo_b64}');" if logo_b64 else "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
 
     st.markdown(f"""
         <div class='login-wrapper'>
@@ -215,25 +219,44 @@ if st.session_state.user_role is None:
                     <div class='login-title'>力力坐标工具</div>
     """, unsafe_allow_html=True)
     
-    with st.form("login_form"):
-        password = st.text_input("请输入访问密码", type="password")
-        st.write("")
-        submit = st.form_submit_button("解锁进入")
+    # 🔥 核心逻辑变更：根据状态显示不同的组件
+    if not st.session_state.show_admin_input:
+        # --- 状态 A: 显示两个入口按钮 ---
+        if st.button("🚀 点击直接开始 (普通用户)", type="primary"):
+            st.session_state.user_role = 'user'
+            log_event("Login", "User Auto-Login")
+            st.rerun()
         
-        if submit:
-            if password == USER_PASSWORD:
-                st.session_state.user_role = 'user'
-                log_event("Login", "User Access")
-                st.rerun()
-            elif password == ADMIN_PASSWORD:
-                st.session_state.user_role = 'admin'
-                st.rerun()
-            else:
-                st.error("密码错误")
-    
+        st.write("") # 间距
+        
+        if st.button("🛡️ 管理员登录"):
+            st.session_state.show_admin_input = True
+            st.rerun()
+            
+    else:
+        # --- 状态 B: 显示管理员密码框 ---
+        st.caption("🔒 请输入管理员密码")
+        with st.form("admin_login_form"):
+            password = st.text_input("管理员密码", type="password", label_visibility="collapsed")
+            submit = st.form_submit_button("解锁后台")
+            
+            if submit:
+                if password == ADMIN_PASSWORD:
+                    st.session_state.user_role = 'admin'
+                    st.session_state.show_admin_input = False # 重置状态
+                    st.toast("🎉 管理员身份已验证")
+                    st.rerun()
+                else:
+                    st.error("密码错误")
+        
+        # 返回按钮
+        if st.button("⬅️ 返回"):
+            st.session_state.show_admin_input = False
+            st.rerun()
+
     st.markdown("</div></div></div>", unsafe_allow_html=True) 
 
-# --- 2. 管理员后台界面 ---
+# --- 2. 管理员后台界面 (密码 0521 进入) ---
 elif st.session_state.user_role == 'admin':
     st.title("🛡️ 管理员后台")
     
@@ -256,7 +279,7 @@ elif st.session_state.user_role == 'admin':
     st.download_button("📥 导出 CSV", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
 
 
-# --- 3. 普通用户界面 ---
+# --- 3. 普通用户界面 (免密直接进，标准白底风格) ---
 elif st.session_state.user_role == 'user':
     
     # 侧边栏
@@ -265,11 +288,10 @@ elif st.session_state.user_role == 'user':
             st.session_state.user_role = None
             st.rerun() 
         st.divider()
-        # 🔥🔥🔥 修改点 1：选项名称改成“📄 文本导入” 🔥🔥🔥
         app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别"], index=2)
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v28.0")
+    st.title("力力的坐标工具 v29.0")
     
     # 模式 1: 手动
     if app_mode == "🖐️ 手动输入":
@@ -294,25 +316,17 @@ elif st.session_state.user_role == 'user':
                 with open("manual.kmz", "rb") as f: st.download_button("📥 下载文件", f, "manual.kmz", type="primary")
             else: st.error("数据无效")
 
-    # 模式 2: 文本导入 (原 Excel 导入)
-    # 🔥🔥🔥 修改点 2：改名为“文本导入”，并支持 TXT/CSV 🔥🔥🔥
+    # 模式 2: 文本导入
     elif app_mode == "📄 文本导入":
         st.header("📄 文本导入 (Excel/TXT/CSV)")
-        
-        # 🔥 支持 txt 和 csv 后缀
         file_buffer = st.file_uploader("上传文件", type=['xlsx', 'xls', 'csv', 'txt'])
-        
         if file_buffer:
             try:
-                # 🔥 编码搞定：根据后缀名判断用什么方式读取
                 fname = file_buffer.name.lower()
                 if fname.endswith(('.csv', '.txt')):
-                    # 尝试读取文本文件，engine='python' 可以自动嗅探分隔符
                     df = pd.read_csv(file_buffer, sep=None, engine='python')
                 else:
-                    # 否则默认为 Excel
                     df = pd.read_excel(file_buffer)
-                
                 st.success("读取成功")
                 cols = list(df.columns)
                 c1, c2, c3 = st.columns(3)
@@ -341,8 +355,7 @@ elif st.session_state.user_role == 'user':
                     if count > 0:
                         kml.save("text_import.kmz")
                         with open("text_import.kmz", "rb") as f: st.download_button("📥 下载文件", f, "text_import.kmz", type="primary")
-            except Exception as e:
-                st.error(f"读取失败: {str(e)}")
+            except Exception as e: st.error(f"读取失败: {str(e)}")
 
     # 模式 3: AI
     elif app_mode == "📸 AI图片识别":
