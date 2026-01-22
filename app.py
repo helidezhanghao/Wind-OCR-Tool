@@ -16,34 +16,39 @@ from streamlit_cropper import st_cropper
 # 🔥 你的 Key
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
 
-# 设置 layout="wide" 让手机端尽量撑满
-st.set_page_config(page_title="力力的坐标工具 v22.4", page_icon="📸", layout="wide")
+# layout="wide" 让手机端尽量撑满
+st.set_page_config(page_title="力力的坐标工具 v22.5", page_icon="📸", layout="wide")
 
-# 🔥🔥🔥 CSS 样式注入：美化手机端体验 🔥🔥🔥
+# 🔥🔥🔥 CSS 样式注入：保持按钮美观大方 🔥🔥🔥
 st.markdown("""
     <style>
-        /* 1. 移除顶部讨厌的空白，让内容往上提 */
+        /* 移除顶部讨厌的空白 */
         .block-container {
             padding-top: 1rem !important;
-            padding-left: 0.5rem !important;
-            padding-right: 0.5rem !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
         }
-        /* 2. 强制把摄像头画面撑满宽度 */
-        section[data-testid="stCameraInput"] video {
-            width: 100% !important;
-            border-radius: 12px !important; /* 圆角好看点 */
-            object-fit: cover;
-        }
-        /* 3. 隐藏右上角菜单和底部Footer，看起来更像App */
+        /* 隐藏右上角菜单和底部Footer */
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         
-        /* 4. 按钮美化 */
+        /* 按钮美化：让按钮宽一点，方便手机点按 */
         div.stButton > button {
             width: 100%;
             border-radius: 8px;
             height: 3em;
             font-weight: bold;
+            font-size: 16px !important;
+        }
+        
+        /* 优化上传组件的样式 */
+        [data-testid='stFileUploader'] {
+            width: 100%;
+        }
+        [data-testid='stFileUploader'] section {
+            padding: 1rem;
+            background-color: #f0f2f6;
+            border-radius: 10px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -151,7 +156,7 @@ def recognize_image_with_zhipu(image):
 
 # ================= 界面主逻辑 =================
 
-st.title("📸 力力的坐标工具 v22.4")
+st.title("📸 力力的坐标工具 v22.5")
 
 # --- 侧边栏 ---
 with st.sidebar:
@@ -224,27 +229,17 @@ elif app_mode == "📸 AI图片识别":
     if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
     if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
 
-    # st.header("📸 AI 视觉识别") # 隐藏标题节省空间，手机寸土寸金
-
-    # 简化的选择器
-    st.info("💡 提示：'网页相机'默认前置，请点击画面右上角🔄切换后置。觉得模糊请用'上传'调用原生相机。")
-    input_method = st.radio("选择方式", ["📷 网页相机 (快速)", "📂 手机原生相机 (高清/上传)"], horizontal=True, label_visibility="collapsed")
+    # st.header("📸 AI 视觉识别") # 隐藏标题，节省空间
     
-    img_file = None
-    if input_method == "📷 网页相机 (快速)":
-        # 网页相机组件
-        img_file = st.camera_input("拍照", label_visibility="collapsed")
-    else:
-        # 上传组件 (手机上点这个可以选择 '拍照'，调用的是原生相机)
-        img_file = st.file_uploader("点击这里 -> 选择'拍照'", type=['png', 'jpg', 'jpeg'])
+    # 🔥 核心修改：仅保留这一个清爽的上传入口，改名为“图片上传”
+    # 在手机上点击这个框，系统会自动弹出“拍照 / 图库 / 文件”的选择菜单
+    img_file = st.file_uploader("📸 图片上传 (点这里拍照或选图)", type=['png', 'jpg', 'jpeg'])
     
     if img_file:
         st.session_state.raw_img = Image.open(img_file)
-        # 仅在非相机模式显示预览，避免重复
-        if input_method != "📷 网页相机 (快速)":
-            st.image(st.session_state.raw_img, caption="图片预览", use_column_width=True)
+        st.image(st.session_state.raw_img, caption="预览", use_column_width=True)
         
-        # 按钮做大点
+        # 按钮样式已经通过 CSS 变大
         if st.button("✨ 开始 AI 识别", type="primary"):
             with st.spinner("🚀 AI 正在努力识图中..."):
                 result = recognize_image_with_zhipu(st.session_state.raw_img)
@@ -267,14 +262,10 @@ elif app_mode == "📸 AI图片识别":
     if st.session_state.ai_json_text:
         st.divider()
         st.subheader("📝 结果核对")
-        # 折叠原始返回，手机上不占地
-        # with st.expander("查看 AI 原始返回"):
-        #     st.text_area("JSON Raw", st.session_state.ai_json_text, height=100)
 
         if st.session_state.parsed_df is not None:
             c1, c2 = st.columns(2)
             with c1:
-                # 默认选 Decimal
                 coord_mode = st.selectbox("坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"], index=0)
             cm = 0
             with c2:
@@ -286,7 +277,7 @@ elif app_mode == "📸 AI图片识别":
 
             final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", use_container_width=True)
             
-            st.write("") # 空一行
+            st.write("")
             if st.button("🚀 生成 KMZ 文件"):
                 mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000"}
                 kml, count = generate_kmz(final_df, mode_map[coord_mode], cm)
