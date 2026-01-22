@@ -176,4 +176,23 @@ elif app_mode == "📊 Excel导入":
             with c_set2:
                 if coord_mode == "CGCS2000":
                     cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
-                    cm = st.selectbox("中央
+                    cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+            
+            final_df = st.data_editor(proc_df, num_rows="dynamic", use_container_width=True)
+            if st.button("🚀 生成 KMZ", type="primary"):
+                kml, count = generate_kmz(final_df, coord_mode, cm)
+                if count > 0:
+                    kml.save("excel.kmz")
+                    with open("excel.kmz", "rb") as f: st.download_button("📥 下载", f, "excel.kmz")
+        except: st.error("读取失败")
+
+# --- 模式 3: 智谱 AI 图片识别 ---
+elif app_mode == "📸 AI图片识别":
+    # 状态初始化
+    if 'raw_img' not in st.session_state: st.session_state.raw_img = None
+    if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
+    if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
+
+    st.header("📸 AI 视觉识别 (智谱GLM-4V)")
+    
+    img_file = st.file_uploader("上传图片", type=['png', 'jpg', '
