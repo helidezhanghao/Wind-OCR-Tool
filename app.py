@@ -13,10 +13,10 @@ from io import BytesIO
 from streamlit_cropper import st_cropper
 
 # --- 全局配置 ---
-# 🔥 这里直接内置了你的 Key
+# 🔥 内置 Key (已验证格式正确)
 ZHIPU_API_KEY = "9cf963dd07354f82b9fa957f0d01e24e.DqXLLM9lmpbftJez"
 
-st.set_page_config(page_title="力力的坐标工具 v21.2", page_icon="🤖", layout="centered")
+st.set_page_config(page_title="力力的坐标工具 v21.3 (修复版)", page_icon="🤖", layout="centered")
 
 # ================= 工具函数 =================
 
@@ -69,20 +69,23 @@ def generate_kmz(df, coord_mode, cm=0):
         except: continue
     return kml, valid_count
 
-# --- 智谱 AI 识别核心函数 ---
+# --- 智谱 AI 识别核心函数 (🔥 这里修好了) ---
 def image_to_base64(image):
-    """将 PIL 图片转换为 Base64 字符串"""
+    """将 PIL 图片转换为带前缀的 Base64 字符串"""
     buffered = BytesIO()
+    # 强制转为 RGB 避免 PNG 通道问题
+    if image.mode != "RGB":
+        image = image.convert("RGB")
     image.save(buffered, format="JPEG")
-    return base64.b64encode(buffered.getvalue()).decode('utf-8')
+    img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    # 🔥 关键修复：必须加这个前缀，否则 API 报错
+    return f"data:image/jpeg;base64,{img_str}"
 
 def recognize_image_with_zhipu(image):
     """调用智谱 GLM-4V 进行视觉识别"""
     try:
-        # 使用全局 Key
         client = ZhipuAI(api_key=ZHIPU_API_KEY)
         
-        # 图片转 Base64
         img_base64 = image_to_base64(image)
         
         response = client.chat.completions.create(
@@ -105,18 +108,22 @@ def recognize_image_with_zhipu(image):
                 }
             ]
         )
+        # 增加空值判断
+        if not response.choices or not response.choices[0].message:
+            return "Error: API 返回内容为空"
+            
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error: {str(e)}"
+        # 🔥 将错误直接返回给前端显示
+        return f"CRITICAL_ERROR: {str(e)}"
 
 # ================= 界面主逻辑 =================
 
-st.title("🤖 力力的坐标工具 v21.2 (内置API版)")
+st.title("🤖 力力的坐标工具 v21.3 (修复版)")
 
 # --- 侧边栏 ---
 with st.sidebar:
     st.header("功能选择")
-    # 🔥 删除了 API Key 输入框，直接选择模式
     app_mode = st.radio("请选择模式：", ["🖐️ 手动输入", "📊 Excel导入", "📸 AI图片识别"], index=2)
     st.divider()
     st.info("切换模式会清空当前数据")
@@ -158,3 +165,88 @@ elif app_mode == "📊 Excel导入":
             with c3: col_lon = st.selectbox("经度/Y 列", cols, index=0)
             
             processed = []
+            for i, row in df.iterrows():
+                processed.append({"编号": row[col_name] if col_name != "无" else f"P{i+1}", "纬度/X": row[col_lat], "经度/Y": row[col_lon]})
+            proc_df = pd.DataFrame(processed)
+            
+            st.write("### 确认与生成")
+            c_set1, c_set2 = st.columns(2)
+            with c_set1: coord_mode = st.selectbox("坐标格式", ["Decimal", "DMS", "DDM", "CGCS2000"])
+            cm = 0
+            with c_set2:
+                if coord_mode == "CGCS2000":
+                    cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
+                    cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+            
+            final_df = st.data_editor(proc_df, num_rows="dynamic", use_container_width=True)
+            if st.button("🚀 生成 KMZ", type="primary"):
+                kml, count = generate_kmz(final_df, coord_mode, cm)
+                if count > 0:
+                    kml.save("excel.kmz")
+                    with open("excel.kmz", "rb") as f: st.download_button("📥 下载", f, "excel.kmz")
+        except: st.error("读取失败")
+
+# --- 模式 3: 智谱 AI 图片识别 ---
+elif app_mode == "📸 AI图片识别":
+    # 状态初始化
+    if 'raw_img' not in st.session_state: st.session_state.raw_img = None
+    if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
+    if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
+
+    st.header("📸 AI 视觉识别 (智谱GLM-4V)")
+    
+    img_file = st.file_uploader("上传图片", type=['png', 'jpg', 'jpeg'])
+    
+    if img_file:
+        st.session_state.raw_img = Image.open(img_file)
+        st.image(st.session_state.raw_img, caption="原始图片", use_column_width=True)
+        
+        if st.button("✨ 让智谱AI识别表格", type="primary"):
+            with st.spinner("🚀 AI 正在努力识图中，请稍等..."):
+                result = recognize_image_with_zhipu(st.session_state.raw_img)
+            
+            # 错误处理逻辑
+            if result.startswith("CRITICAL_ERROR"):
+                st.error("AI 接口调用失败！")
+                st.error(result)
+            elif result.startswith("Error"):
+                st.warning(result)
+            else:
+                clean_result = result.replace("```json", "").replace("```", "").strip()
+                st.session_state.ai_json_text = clean_result
+                
+                try:
+                    data = json.loads(clean_result)
+                    st.session_state.parsed_df = pd.DataFrame(data)
+                    st.success("识别成功！请下拉查看结果。")
+                except:
+                    st.error("AI 返回的数据格式有误，请在下方手动修正 JSON。")
+
+    if st.session_state.ai_json_text:
+        st.divider()
+        st.subheader("📝 确认与编辑")
+        
+        with st.expander("查看 AI 原始返回 (调试用)"):
+            st.text_area("JSON Raw", st.session_state.ai_json_text, height=100)
+
+        if st.session_state.parsed_df is not None:
+            st.caption("👇 请核对数据（可直接修改表格）：")
+            c1, c2 = st.columns(2)
+            with c1:
+                coord_mode = st.selectbox("图片里的坐标格式是？", ["Decimal", "DMS", "DDM", "CGCS2000"])
+            cm = 0
+            with c2:
+                if coord_mode == "CGCS2000":
+                    cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
+                    cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+
+            final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", use_container_width=True)
+            
+            if st.button("🚀 生成 KMZ"):
+                kml, count = generate_kmz(final_df, coord_mode, cm)
+                if count > 0:
+                    kml.save("zhipu_result.kmz")
+                    with open("zhipu_result.kmz", "rb") as f:
+                        st.download_button("📥 下载文件", f, "zhipu_result.kmz", type="primary")
+                else:
+                    st.error("无有效数据。")
