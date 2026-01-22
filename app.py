@@ -84,4 +84,161 @@ def recognize_image_with_zhipu(image):
     """调用智谱 GLM-4V 进行视觉识别"""
     try:
         client = ZhipuAI(api_key=ZHIPU_API_KEY)
-        img_base64 = image_to_base
+        img_base64 = image_to_base64(image)
+        
+        response = client.chat.completions.create(
+            model="glm-4v",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "请识别图片中的表格数据。直接提取 编号、纬度/X、经度/Y。请直接返回纯 JSON 数组字符串，不要用markdown代码块包裹。格式示例：[{\"编号\": \"T1\", \"纬度/X\": 34.12, \"经度/Y\": 115.33}]"
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": img_base64
+                            }
+                        }
+                    ]
+                }
+            ]
+        )
+        if not response.choices or not response.choices[0].message:
+            return "Error: API 返回内容为空"
+            
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"CRITICAL_ERROR: {str(e)}"
+
+# ================= 界面主逻辑 =================
+
+st.title("🤖 力力的坐标工具 v21.4")
+
+# --- 侧边栏 ---
+with st.sidebar:
+    st.header("功能选择")
+    app_mode = st.radio("请选择模式：", ["🖐️ 手动输入", "📊 Excel导入", "📸 AI图片识别"], index=2)
+    st.divider()
+    st.info("切换模式会清空当前数据")
+
+# --- 模式 1: 手动输入 ---
+if app_mode == "🖐️ 手动输入":
+    st.header("🖐️ 手动录入坐标")
+    c1, c2 = st.columns(2)
+    with c1:
+        coord_mode = st.selectbox("坐标格式", ["Decimal", "DMS", "DDM", "CGCS2000"])
+    cm = 0
+    with c2:
+        if coord_mode == "CGCS2000":
+            cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
+            cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+    
+    if 'manual_df' not in st.session_state:
+        st.session_state.manual_df = pd.DataFrame([{"编号": "T1", "纬度/X": "", "经度/Y": ""}, {"编号": "T2", "纬度/X": "", "经度/Y": ""}])
+    edited_df = st.data_editor(st.session_state.manual_df, num_rows="dynamic", use_container_width=True)
+    if st.button("🚀 生成 KMZ", type="primary"):
+        kml, count = generate_kmz(edited_df, coord_mode, cm)
+        if count > 0:
+            kml.save("manual.kmz")
+            with open("manual.kmz", "rb") as f: st.download_button("📥 下载文件", f, "manual.kmz")
+        else: st.error("数据无效")
+
+# --- 模式 2: Excel导入 ---
+elif app_mode == "📊 Excel导入":
+    st.header("📊 Excel 批量导入")
+    excel_file = st.file_uploader("上传 Excel", type=['xlsx', 'xls'])
+    if excel_file:
+        try:
+            df = pd.read_excel(excel_file)
+            st.success("读取成功")
+            cols = list(df.columns)
+            c1, c2, c3 = st.columns(3)
+            with c1: col_name = st.selectbox("编号列", ["无"] + cols)
+            with c2: col_lat = st.selectbox("纬度/X 列", cols, index=0)
+            with c3: col_lon = st.selectbox("经度/Y 列", cols, index=0)
+            
+            processed = []
+            for i, row in df.iterrows():
+                processed.append({"编号": row[col_name] if col_name != "无" else f"P{i+1}", "纬度/X": row[col_lat], "经度/Y": row[col_lon]})
+            proc_df = pd.DataFrame(processed)
+            
+            st.write("### 确认与生成")
+            c_set1, c_set2 = st.columns(2)
+            with c_set1: coord_mode = st.selectbox("坐标格式", ["Decimal", "DMS", "DDM", "CGCS2000"])
+            cm = 0
+            with c_set2:
+                if coord_mode == "CGCS2000":
+                    cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
+                    cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+            
+            final_df = st.data_editor(proc_df, num_rows="dynamic", use_container_width=True)
+            if st.button("🚀 生成 KMZ", type="primary"):
+                kml, count = generate_kmz(final_df, coord_mode, cm)
+                if count > 0:
+                    kml.save("excel.kmz")
+                    with open("excel.kmz", "rb") as f: st.download_button("📥 下载", f, "excel.kmz")
+        except: st.error("读取失败")
+
+# --- 模式 3: 智谱 AI 图片识别 ---
+elif app_mode == "📸 AI图片识别":
+    if 'raw_img' not in st.session_state: st.session_state.raw_img = None
+    if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
+    if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
+
+    st.header("📸 AI 视觉识别 (智谱GLM-4V)")
+    
+    img_file = st.file_uploader("上传图片", type=['png', 'jpg', 'jpeg'])
+    
+    if img_file:
+        st.session_state.raw_img = Image.open(img_file)
+        st.image(st.session_state.raw_img, caption="原始图片", use_column_width=True)
+        
+        if st.button("✨ 让智谱AI识别表格", type="primary"):
+            with st.spinner("🚀 AI 正在努力识图中，请稍等..."):
+                result = recognize_image_with_zhipu(st.session_state.raw_img)
+            
+            if result.startswith("CRITICAL_ERROR"):
+                st.error("AI 接口调用失败！")
+                st.error(result)
+            elif result.startswith("Error"):
+                st.warning(result)
+            else:
+                clean_result = result.replace("```json", "").replace("```", "").strip()
+                st.session_state.ai_json_text = clean_result
+                try:
+                    data = json.loads(clean_result)
+                    st.session_state.parsed_df = pd.DataFrame(data)
+                    st.success("识别成功！")
+                except:
+                    st.error("AI 返回的数据格式有误，请在下方手动修正 JSON。")
+
+    if st.session_state.ai_json_text:
+        st.divider()
+        st.subheader("📝 确认与编辑")
+        with st.expander("查看 AI 原始返回"):
+            st.text_area("JSON Raw", st.session_state.ai_json_text, height=100)
+
+        if st.session_state.parsed_df is not None:
+            st.caption("👇 请核对数据：")
+            c1, c2 = st.columns(2)
+            with c1:
+                coord_mode = st.selectbox("图片里的坐标格式是？", ["Decimal", "DMS", "DDM", "CGCS2000"])
+            cm = 0
+            with c2:
+                if coord_mode == "CGCS2000":
+                    cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
+                    cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+
+            final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", use_container_width=True)
+            
+            if st.button("🚀 生成 KMZ"):
+                kml, count = generate_kmz(final_df, coord_mode, cm)
+                if count > 0:
+                    kml.save("zhipu_result.kmz")
+                    with open("zhipu_result.kmz", "rb") as f:
+                        st.download_button("📥 下载文件", f, "zhipu_result.kmz", type="primary")
+                else:
+                    st.error("无有效数据。")
