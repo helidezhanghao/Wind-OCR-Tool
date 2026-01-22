@@ -18,9 +18,10 @@ ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
 USER_PASSWORD = "2026"  # 用户密码
 ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
+LOGO_FILENAME = "logo.png" # 🔥 请确保目录下有这个文件
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v26.3", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v26.4", page_icon="📲", layout="wide")
 
 # 🔥🔥🔥 核心：深度定制 CSS 以实现逼真的 iOS 风格 🔥🔥🔥
 st.markdown("""
@@ -90,33 +91,35 @@ st.markdown("""
         div.stButton > button:active { transform: scale(0.97); background-color: #D1D1D6; }
         button[kind="primary"] { background-color: var(--ios-blue) !important; color: white !important; }
 
-        /* --- 6. 登录界面专用样式 (v26.3 全屏 Banner 版) --- */
+        /* --- 6. 登录界面专用样式 (v26.4 Logo版) --- */
         .login-wrapper { display: flex; justify-content: center; align-items: center; min-height: 70vh; }
         .login-box {
             background: var(--ios-card-bg);
-            /* padding: 2.5rem 2rem;  <-- 移除原有内边距 */
-            padding: 0; /* 清空内边距，让图片贴边 */
+            padding: 2.5rem 2rem; /* 恢复内边距 */
             border-radius: 32px;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
             text-align: center;
             max-width: 400px; width: 94%;
             margin: auto;
-            overflow: hidden; /* 关键：隐藏溢出，让图片跟随圆角裁切 */
         }
-        /* 新增：顶部图片 Banner */
-        .login-header-banner {
-            width: 100%;
-            height: 180px; /* 调整Banner高度 */
-            background-size: cover;
-            background-position: center;
-            /* 不需要单独设圆角，父容器 overflow:hidden 会自动裁切 */
+        /* 新增：Logo和标题的横向布局容器 */
+        .login-branding {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 2rem;
+            gap: 12px; /* Logo和文字的间距 */
         }
-        /* 新增：内容区域容器 */
-        .login-content {
-            padding: 2rem 2rem 2.5rem 2rem; /* 在这里添加内边距 */
+        .login-logo-img {
+            width: 48px; height: 48px; /* Logo大小 */
+            border-radius: 10px;
+            object-fit: contain;
         }
-
-        .login-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 2rem; color: #000;}
+        .login-logo-placeholder { font-size: 3rem; }
+        .login-title { 
+            font-size: 1.6rem; font-weight: 800; color: #000;
+            margin: 0; line-height: 1.2;
+        }
 
         /* --- 7. 管理员卡片 --- */
         .metric-card {
@@ -132,12 +135,25 @@ st.markdown("""
             [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 16px; }
             [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; flex: 1 1 auto !important; margin-bottom: 8px; }
         }
+        @media (max-width: 380px) {
+            .login-box { padding: 2rem 1.5rem; }
+            .login-title { font-size: 1.4rem; } /* 小屏下字体稍微调小 */
+        }
         
         img { border-radius: 16px; }
     </style>
 """, unsafe_allow_html=True)
 
-# ================= 日志与工具函数 (完全不变) =================
+# ================= 日志与工具函数 =================
+
+# 🔥 新增：读取本地图片并转为 Base64 的函数
+def get_local_image_base64(path):
+    try:
+        with open(path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+            return f"data:image/png;base64,{encoded_string}" # 假设是png
+    except FileNotFoundError:
+        return None
 
 def init_log():
     if not os.path.exists(LOG_FILE):
@@ -231,18 +247,25 @@ def recognize_image_with_zhipu(image):
 if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
-# --- 1. 登录界面 (v26.3 全屏 Banner 版) ---
+# --- 1. 登录界面 (v26.4 Logo版) ---
 if st.session_state.user_role is None:
-    # 使用一张精选的地图/抽象主题图片
-    header_image_url = "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=800&q=80"
+    # 尝试读取本地 logo.png
+    logo_b64 = get_local_image_base64(LOGO_FILENAME)
     
-    # HTML 结构重构：Login Box -> Header Banner + Content Div
+    # 如果读到了图片就用图片，读不到就用 emoji 占位
+    if logo_b64:
+        logo_html = f'<img src="{logo_b64}" class="login-logo-img">'
+    else:
+        logo_html = '<div class="login-logo-placeholder">🗺️</div>'
+
+    # 使用新的横向布局结构
     st.markdown(f"""
         <div class='login-wrapper'>
             <div class='login-box'>
-                <div class='login-header-banner' style='background-image: url("{header_image_url}");'></div>
-                <div class='login-content'>
+                <div class='login-branding'>
+                    {logo_html}
                     <div class='login-title'>力力坐标工具</div>
+                </div>
     """, unsafe_allow_html=True)
     
     with st.form("login_form"):
@@ -263,7 +286,7 @@ if st.session_state.user_role is None:
             else:
                 st.error("密码错误")
     
-    st.markdown("</div></div></div>", unsafe_allow_html=True) # 关闭所有 div
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 # --- 2. 管理员后台界面 (保持不变) ---
 elif st.session_state.user_role == 'admin':
