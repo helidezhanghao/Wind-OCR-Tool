@@ -18,125 +18,86 @@ ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
 USER_PASSWORD = "2026"  # 用户密码
 ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
-LOGO_FILENAME = "logo.png" # 🔥 必须上传这个文件
+LOGO_FILENAME = "logo.png"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v26.8", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v27.0", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 核心 CSS：深度定制 iOS 风格 🔥🔥🔥
+# 🔥🔥🔥 CSS：只针对登录页和管理员后台，不动主页！！！ 🔥🔥🔥
 st.markdown("""
     <style>
-        /* --- 定义 iOS 颜色变量 --- */
-        :root {
-            --ios-bg: #F2F2F7;
-            --ios-card-bg: #FFFFFF;
-            --ios-blue: #007AFF;
-            --ios-text-primary: #000000;
-            --ios-text-secondary: #8E8E93;
-            --ios-input-bg: #EBEBF0;
-            --ios-divider: #C6C6C8;
-        }
-
-        /* --- 全局设置 --- */
-        html, body, [class*="css"] {
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-            background-color: var(--ios-bg) !important;
-            color: var(--ios-text-primary);
-        }
-        .block-container {
-            padding-top: 1rem !important;
-            padding-bottom: 4rem !important;
-            max-width: 960px;
-        }
+        /* 1. 隐藏默认页脚和菜单 (这个还是要藏的，比较干净) */
         footer {display: none !important;}
         #MainMenu {display: none !important;}
         .stDeployButton {display: none !important;}
-
-        /* --- 卡片容器 --- */
-        [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] {
-             background-color: var(--ios-card-bg);
-             border-radius: 20px;
-             padding: 24px;
-             box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.03);
-             margin-bottom: 24px; border: none;
-        }
-        [data-testid="stSidebar"] { background-color: var(--ios-card-bg); border-right: 1px solid #E5E5EA; }
-
-        /* --- 控件风格 --- */
-        [data-testid="stTextInput"] input {
-            background-color: var(--ios-input-bg) !important; border: none !important;
-            border-radius: 12px !important; height: 48px; padding: 0 16px; font-size: 17px;
-        }
-        [data-testid="stSelectbox"] div[class*="control"] {
-            background-color: var(--ios-input-bg) !important; border: none !important;
-            border-radius: 12px !important; height: 48px;
-        }
-        [data-testid='stFileUploader'] section {
-            border-radius: 16px; background-color: var(--ios-input-bg); border: 2px dashed #D1D1D6;
-        }
-
-        /* --- 按钮美化 --- */
-        div.stButton > button {
-            border-radius: 100px !important; height: 52px; font-weight: 600;
-            font-size: 17px !important; border: none !important; box-shadow: none !important;
-            background-color: #E5E5EA; color: var(--ios-blue) !important;
-            transition: transform 0.15s ease;
-        }
-        div.stButton > button:active { transform: scale(0.97); background-color: #D1D1D6; }
-        button[kind="primary"] { background-color: var(--ios-blue) !important; color: white !important; }
-
-        /* --- 6. 登录界面专用样式 (V26.8 修复版) --- */
-        .login-wrapper { display: flex; justify-content: center; align-items: center; min-height: 70vh; }
         
-        .login-box {
-            background: var(--ios-card-bg);
-            /* 增加内边距，让内容呼吸 */
-            padding: 3rem 2rem; 
-            border-radius: 32px;
-            box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.12);
-            text-align: center;
-            max-width: 380px; width: 90%;
-            margin: auto;
+        /* 2. 移除顶部过多空白 */
+        .block-container {
+            padding-top: 2rem !important;
+            padding-bottom: 3rem !important;
         }
 
-        /* Logo 图片容器：确保图片自适应且不被裁切 */
-        .login-logo-container {
+        /* ================= 登录界面专用样式 ================= */
+        .login-wrapper {
             display: flex;
             justify-content: center;
-            margin-bottom: 2rem;
+            align-items: center;
+            height: 70vh; /* 垂直居中 */
         }
         
-        .login-logo-img {
-            /* 关键修改：最大宽度限制，高度自适应，保持比例 */
-            max-width: 180px; 
-            height: auto;
-            object-fit: contain; /* 确保完整显示 */
-            border-radius: 12px; /* 给图片加一点圆角 */
+        .login-box {
+            background: #ffffff;
+            padding: 0; /* 这里的 0 必须保留，为了让图片贴边 */
+            border-radius: 24px; /* 圆角 */
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); /* 阴影 */
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+            margin: auto;
+            overflow: hidden; /* 关键：裁切图片圆角 */
+            border: 1px solid #f0f0f0;
         }
-        
-        .login-logo-placeholder { font-size: 4rem; margin-bottom: 1rem; }
 
-        /* --- Admin 卡片适配 --- */
+        /* 顶部横幅图片 (Banner) */
+        .login-banner-image {
+            width: 100%;
+            height: 200px; /* 图片区域高度 */
+            background-size: cover; /* 充满容器 */
+            /* 🔥🔥🔥 核心修改：强制图片居中对齐，截取中间区域 🔥🔥🔥 */
+            background-position: center center !important; 
+            background-repeat: no-repeat;
+        }
+
+        /* 登录框下半部分内容 */
+        .login-content-wrapper {
+            padding: 2rem 2.5rem 2.5rem 2.5rem;
+        }
+        
+        .login-title { 
+            font-size: 1.5rem; font-weight: 700; color: #333;
+            margin-bottom: 1.5rem;
+        }
+
+        /* ================= 管理员后台卡片样式 ================= */
         .metric-card {
-            background-color: var(--ios-card-bg); padding: 24px; border-radius: 22px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.03); text-align: center; height: 100%;
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 5px solid #007bff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            margin-bottom: 10px;
         }
-        .metric-card h1 { font-size: 2.5rem; font-weight: 800; color: var(--ios-text-primary); margin: 0;}
         
-        /* 移动端适配 */
+        /* ================= 移动端适配 ================= */
         @media (max-width: 768px) {
-            [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 16px; }
-            [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; flex: 1 1 auto !important; margin-bottom: 8px; }
+            /* 管理员卡片堆叠 */
+            [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 10px; }
+            [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; }
         }
-        @media (max-width: 380px) {
-            .login-box { padding: 2rem 1.5rem; }
-        }
-        
-        img { border-radius: 16px; }
     </style>
 """, unsafe_allow_html=True)
 
-# ================= 工具函数 =================
+# ================= 工具函数 (保持原样) =================
 
 def get_local_image_base64(path):
     try:
@@ -238,217 +199,197 @@ def recognize_image_with_zhipu(image):
 if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
-# --- 1. 登录界面 (v26.8 终极修复版) ---
+# --- 1. 登录界面 (Banner + Center Image) ---
 if st.session_state.user_role is None:
-    # 尝试读取 logo.png
+    # 尝试读取本地 logo.png
     logo_b64 = get_local_image_base64(LOGO_FILENAME)
     
-    # 核心修改：只放图片，完全移除文字标题
+    bg_style = ""
     if logo_b64:
-        logo_html = f'<img src="{logo_b64}" class="login-logo-img">'
+        # 强制居中对齐图片
+        bg_style = f"background-image: url('{logo_b64}');"
     else:
-        # 如果没传图片，给一个大号emoji兜底
-        logo_html = '<div class="login-logo-placeholder">🗺️</div>'
+        # 兜底背景
+        bg_style = "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
 
+    # HTML 结构
     st.markdown(f"""
         <div class='login-wrapper'>
             <div class='login-box'>
-                <div class='login-logo-container'>
-                    {logo_html}
-                </div>
+                <div class='login-banner-image' style="{bg_style}"></div>
+                <div class='login-content-wrapper'>
+                    <div class='login-title'>力力坐标工具</div>
     """, unsafe_allow_html=True)
     
     with st.form("login_form"):
-        password = st.text_input("密码", type="password", placeholder="请输入访问密码", label_visibility="collapsed")
+        # 这里的控件会使用 Streamlit 默认样式（只是因为在 form 里会比较紧凑）
+        password = st.text_input("请输入访问密码", type="password")
         st.write("")
-        submit = st.form_submit_button("解锁进入", type="primary")
+        submit = st.form_submit_button("解锁进入")
         
         if submit:
             if password == USER_PASSWORD:
                 st.session_state.user_role = 'user'
                 log_event("Login", "User Access")
-                st.toast("🎉 验证成功")
                 st.rerun()
             elif password == ADMIN_PASSWORD:
                 st.session_state.user_role = 'admin'
-                st.toast("🛡️ 管理员模式")
                 st.rerun()
             else:
                 st.error("密码错误")
     
-    st.markdown("</div></div>", unsafe_allow_html=True) 
+    st.markdown("</div></div></div>", unsafe_allow_html=True) 
 
-# --- 2. 管理员后台界面 (保持不变) ---
+# --- 2. 管理员后台界面 (保持卡片布局，但用回默认样式) ---
 elif st.session_state.user_role == 'admin':
-    st.title("管理员控制台")
+    st.title("🛡️ 管理员后台")
     
-    with st.container():
-        c_btn, c_title = st.columns([1, 5])
-        with c_btn:
-             if st.button("🔒 退出"):
-                st.session_state.user_role = None
-                st.rerun()
+    if st.sidebar.button("🔒 退出"):
+        st.session_state.user_role = None
+        st.rerun()
 
-        df_logs = get_logs()
-        total_visits = len(df_logs)
-        ai_calls = len(df_logs[df_logs['Action'] == 'AI Recognize'])
-        last_access = df_logs['Time'].iloc[-1] if not df_logs.empty else "无数据"
+    df_logs = get_logs()
+    total_visits = len(df_logs)
+    ai_calls = len(df_logs[df_logs['Action'] == 'AI Recognize'])
+    last_access = df_logs['Time'].iloc[-1] if not df_logs.empty else "无数据"
 
-        c1, c2, c3 = st.columns(3)
-        with c1: st.markdown(f"<div class='metric-card'><h3>总使用量</h3><h1>{total_visits}</h1></div>", unsafe_allow_html=True)
-        with c2: st.markdown(f"<div class='metric-card'><h3>AI 调用</h3><h1>{ai_calls}</h1></div>", unsafe_allow_html=True)
-        with c3: st.markdown(f"<div class='metric-card'><h3>最近活动</h3><p style='font-size: 1rem; font-weight:600; color:#1C1C1E; margin-top:10px;'>{last_access}</p></div>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    with c1: st.markdown(f"<div class='metric-card'><h3>📊 总使用次数</h3><h1>{total_visits}</h1></div>", unsafe_allow_html=True)
+    with c2: st.markdown(f"<div class='metric-card'><h3>📸 AI 调用</h3><h1>{ai_calls}</h1></div>", unsafe_allow_html=True)
+    with c3: st.markdown(f"<div class='metric-card'><h3>🕒 最近活动</h3><p>{last_access}</p></div>", unsafe_allow_html=True)
 
-    st.subheader("访问日志")
-    with st.container():
-        st.dataframe(df_logs.sort_index(ascending=False), use_container_width=True, height=400)
-        st.write("")
-        st.download_button("📥 导出日志记录", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
+    st.subheader("详细日志")
+    st.dataframe(df_logs.sort_index(ascending=False), use_container_width=True)
+    st.download_button("📥 导出 CSV", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
 
 
-# --- 3. 普通用户界面 (保持不变) ---
+# --- 3. 普通用户界面 (100% 还原回默认样式) ---
 elif st.session_state.user_role == 'user':
     
+    # 侧边栏
     with st.sidebar:
-        st.markdown("### 设置")
         if st.button("🔒 退出登录"):
             st.session_state.user_role = None
             st.rerun() 
         st.divider()
-        st.markdown("### 模式选择")
-        app_mode = st.radio("模式选择", ["🖐️ 手动输入", "📊 Excel导入", "📸 AI图片识别"], index=2, label_visibility="collapsed")
+        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📊 Excel导入", "📸 AI图片识别"], index=2)
+        st.info("切换模式会清空当前数据")
 
-    st.title("坐标工具")
+    st.title("力力的坐标工具 v27.0")
     
-    with st.container():
-        # 模式 1: 手动
-        if app_mode == "🖐️ 手动输入":
-            st.subheader("手动录入")
-            st.caption("配置坐标格式并输入数据。")
+    # 模式 1: 手动
+    if app_mode == "🖐️ 手动输入":
+        st.header("🖐️ 手动录入")
+        c1, c2 = st.columns(2)
+        with c1: coord_mode = st.selectbox("坐标格式", ["Decimal", "DMS", "DDM", "CGCS2000"])
+        with c2:
+            cm = 0
+            if coord_mode == "CGCS2000":
+                cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
+                cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+        
+        if 'manual_df' not in st.session_state:
+            st.session_state.manual_df = pd.DataFrame([{"编号": "T1", "纬度/X": "", "经度/Y": ""}, {"编号": "T2", "纬度/X": "", "经度/Y": ""}])
+        edited_df = st.data_editor(st.session_state.manual_df, num_rows="dynamic", use_container_width=True)
+        
+        if st.button("🚀 生成 KMZ", type="primary"):
+            log_event("Generate KMZ", "Manual")
+            kml, count = generate_kmz(edited_df, coord_mode, cm)
+            if count > 0:
+                kml.save("manual.kmz")
+                with open("manual.kmz", "rb") as f: st.download_button("📥 下载文件", f, "manual.kmz", type="primary")
+            else: st.error("数据无效")
+
+    # 模式 2: Excel
+    elif app_mode == "📊 Excel导入":
+        st.header("📊 Excel 导入")
+        excel_file = st.file_uploader("上传 Excel", type=['xlsx', 'xls'])
+        if excel_file:
+            try:
+                df = pd.read_excel(excel_file)
+                st.success("读取成功")
+                cols = list(df.columns)
+                c1, c2, c3 = st.columns(3)
+                with c1: col_name = st.selectbox("编号列", ["无"] + cols)
+                with c2: col_lat = st.selectbox("纬度/X 列", cols, index=0)
+                with c3: col_lon = st.selectbox("经度/Y 列", cols, index=0)
+                
+                processed = []
+                for i, row in df.iterrows():
+                    processed.append({"编号": row[col_name] if col_name != "无" else f"P{i+1}", "纬度/X": row[col_lat], "经度/Y": row[col_lon]})
+                proc_df = pd.DataFrame(processed)
+                
+                st.write("---")
+                c_set1, c_set2 = st.columns(2)
+                with c_set1: coord_mode = st.selectbox("坐标格式", ["Decimal", "DMS", "DDM", "CGCS2000"])
+                with c_set2:
+                    cm = 0
+                    if coord_mode == "CGCS2000":
+                        cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
+                        cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+                final_df = st.data_editor(proc_df, num_rows="dynamic", use_container_width=True)
+                
+                if st.button("🚀 生成 KMZ", type="primary"):
+                    log_event("Generate KMZ", "Excel")
+                    kml, count = generate_kmz(final_df, coord_mode, cm)
+                    if count > 0:
+                        kml.save("excel.kmz")
+                        with open("excel.kmz", "rb") as f: st.download_button("📥 下载文件", f, "excel.kmz", type="primary")
+            except: st.error("读取失败")
+
+    # 模式 3: AI
+    elif app_mode == "📸 AI图片识别":
+        st.header("📸 AI 识别")
+        
+        if 'raw_img' not in st.session_state: st.session_state.raw_img = None
+        if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
+        if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
+        
+        img_file = st.file_uploader("图片上传 (拍照/选图)", type=['png', 'jpg', 'jpeg'])
+        
+        if img_file:
+            opened_img = Image.open(img_file)
+            st.session_state.raw_img = ImageOps.exif_transpose(opened_img)
+            st.image(st.session_state.raw_img, caption="预览", use_column_width=True)
+            
+            if st.button("✨ 开始识别", type="primary"):
+                log_event("AI Recognize", "Start")
+                with st.spinner("AI 识别中..."):
+                    result = recognize_image_with_zhipu(st.session_state.raw_img)
+                if result.startswith("CRITICAL_ERROR"):
+                    st.error(f"失败: {result}")
+                elif result.startswith("Error"):
+                    st.warning(result)
+                else:
+                    clean_result = result.replace("```json", "").replace("```", "").strip()
+                    st.session_state.ai_json_text = clean_result
+                    try:
+                        data = json.loads(clean_result)
+                        st.session_state.parsed_df = pd.DataFrame(data)
+                        st.success("识别成功！")
+                    except: st.error("格式解析错误")
+
+        if st.session_state.parsed_df is not None:
+            st.divider()
+            st.subheader("结果核对")
             
             c1, c2 = st.columns(2)
-            with c1: coord_mode = st.selectbox("坐标格式", ["Decimal", "DMS", "DDM", "CGCS2000"])
+            with c1: coord_mode = st.selectbox("图片坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"], index=0)
             with c2:
                 cm = 0
-                if coord_mode == "CGCS2000":
+                if coord_mode == "CGCS2000 (投影)":
                     cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
                     cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+                else: st.empty()
             
-            st.divider()
-            st.markdown("#### 数据编辑")
-            if 'manual_df' not in st.session_state:
-                st.session_state.manual_df = pd.DataFrame([{"编号": "T1", "纬度/X": "", "经度/Y": ""}, {"编号": "T2", "纬度/X": "", "经度/Y": ""}])
-            edited_df = st.data_editor(st.session_state.manual_df, num_rows="dynamic", use_container_width=True)
+            final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", use_container_width=True)
             
             st.write("")
-            if st.button("生成 KMZ 文件", type="primary"):
-                log_event("Generate KMZ", "Manual")
-                kml, count = generate_kmz(edited_df, coord_mode, cm)
+            if st.button("🚀 生成 KMZ", type="primary"):
+                log_event("Generate KMZ", "AI Result")
+                mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000"}
+                kml, count = generate_kmz(final_df, mode_map[coord_mode], cm)
                 if count > 0:
-                    kml.save("manual.kmz")
-                    with open("manual.kmz", "rb") as f: st.download_button("📥 下载 KMZ", f, "manual.kmz", type="primary")
-                else: st.error("请检查输入数据。")
-
-        # 模式 2: Excel
-        elif app_mode == "📊 Excel导入":
-            st.subheader("Excel 导入")
-            st.caption("上传文件并映射列名。")
-            excel_file = st.file_uploader("上传文件", type=['xlsx', 'xls'], label_visibility="collapsed")
-            if excel_file:
-                try:
-                    df = pd.read_excel(excel_file)
-                    st.toast("✅ 文件已加载")
-                    
-                    st.divider()
-                    st.markdown("#### 列映射")
-                    cols = list(df.columns)
-                    c1, c2, c3 = st.columns(3)
-                    with c1: col_name = st.selectbox("编号列", ["无"] + cols)
-                    with c2: col_lat = st.selectbox("纬度/X 列", cols, index=0)
-                    with c3: col_lon = st.selectbox("经度/Y 列", cols, index=0)
-                    
-                    processed = []
-                    for i, row in df.iterrows():
-                        processed.append({"编号": row[col_name] if col_name != "无" else f"P{i+1}", "纬度/X": row[col_lat], "经度/Y": row[col_lon]})
-                    proc_df = pd.DataFrame(processed)
-                    
-                    st.divider()
-                    st.markdown("#### 格式确认")
-                    c_set1, c_set2 = st.columns(2)
-                    with c_set1: coord_mode = st.selectbox("坐标格式", ["Decimal", "DMS", "DDM", "CGCS2000"])
-                    with c_set2:
-                        cm = 0
-                        if coord_mode == "CGCS2000":
-                            cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
-                            cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
-                    final_df = st.data_editor(proc_df, num_rows="dynamic", use_container_width=True)
-                    
-                    st.write("")
-                    if st.button("生成 KMZ 文件", type="primary"):
-                        log_event("Generate KMZ", "Excel")
-                        kml, count = generate_kmz(final_df, coord_mode, cm)
-                        if count > 0:
-                            kml.save("excel.kmz")
-                            with open("excel.kmz", "rb") as f: st.download_button("📥 下载 KMZ", f, "excel.kmz", type="primary")
-                except: st.error("文件读取失败。")
-
-        # 模式 3: AI
-        elif app_mode == "📸 AI图片识别":
-            st.subheader("AI 识别")
-            st.caption("选取图片，AI 将自动提取坐标表格。")
-            
-            if 'raw_img' not in st.session_state: st.session_state.raw_img = None
-            if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
-            if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
-            
-            with st.container():
-                img_file = st.file_uploader("选择图片", type=['png', 'jpg', 'jpeg'], label_visibility="collapsed")
-            
-            if img_file:
-                opened_img = Image.open(img_file)
-                st.session_state.raw_img = ImageOps.exif_transpose(opened_img)
-                st.markdown(f'<img src="data:image/jpeg;base64,{image_to_base64(st.session_state.raw_img)}" style="width:100%; border-radius: 16px; margin-top: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">', unsafe_allow_html=True)
-                
-                if st.button("开始识别", type="primary"):
-                    log_event("AI Recognize", "Start")
-                    with st.spinner("正在处理..."):
-                        result = recognize_image_with_zhipu(st.session_state.raw_img)
-                    if result.startswith("CRITICAL_ERROR"):
-                        st.error(f"调用失败: {result}")
-                    elif result.startswith("Error"):
-                        st.warning(f"识别异常: {result}")
-                    else:
-                        clean_result = result.replace("```json", "").replace("```", "").strip()
-                        st.session_state.ai_json_text = clean_result
-                        try:
-                            data = json.loads(clean_result)
-                            st.session_state.parsed_df = pd.DataFrame(data)
-                            st.toast("✅ 识别完成")
-                        except: st.error("数据格式错误，请重试。")
-
-            if st.session_state.parsed_df is not None:
-                st.divider()
-                st.subheader("结果核对")
-                st.caption("确认坐标格式与识别结果一致。")
-                
-                with st.container():
-                    c1, c2 = st.columns(2)
-                    with c1: coord_mode = st.selectbox("图片坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"], index=0)
-                    with c2:
-                        cm = 0
-                        if coord_mode == "CGCS2000 (投影)":
-                            cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
-                            cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
-                        else: st.empty()
-                    
-                    final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", use_container_width=True)
-                    
-                    st.write("")
-                    if st.button("生成 KMZ 文件", type="primary"):
-                        log_event("Generate KMZ", "AI Result")
-                        mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000"}
-                        kml, count = generate_kmz(final_df, mode_map[coord_mode], cm)
-                        if count > 0:
-                            kml.save("zhipu_result.kmz")
-                            with open("zhipu_result.kmz", "rb") as f: st.download_button("📥 下载 KMZ", f, "zhipu_result.kmz", type="primary")
-                        else: st.error("未生成有效数据。")
+                    kml.save("zhipu_result.kmz")
+                    with open("zhipu_result.kmz", "rb") as f: st.download_button("📥 下载文件", f, "zhipu_result.kmz", type="primary")
+                else: st.error("无有效数据。")
