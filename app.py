@@ -15,15 +15,15 @@ import csv
 
 # --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
-# USER_PASSWORD = "2026"  <-- 普通用户密码已取消
+USER_PASSWORD = "2026"  # ✅ 恢复普通用户密码
 ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v29.0", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v30.0", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 CSS：保持样式 🔥🔥🔥
+# 🔥🔥🔥 CSS 样式 (保持 v29 不变) 🔥🔥🔥
 st.markdown("""
     <style>
         /* 1. 隐藏默认页脚和菜单 */
@@ -202,11 +202,11 @@ def recognize_image_with_zhipu(image):
 # ================= 🚀 主程序逻辑 =================
 
 if 'user_role' not in st.session_state:
-    st.session_state.user_role = None # None, 'user', 'admin'
-if 'show_admin_input' not in st.session_state:
-    st.session_state.show_admin_input = False # 控制是否显示管理员密码框
+    st.session_state.user_role = None 
+if 'login_mode' not in st.session_state:
+    st.session_state.login_mode = 'select' # select, user_input, admin_input
 
-# --- 1. 登录界面 (选择身份) ---
+# --- 1. 登录界面 (三段式逻辑) ---
 if st.session_state.user_role is None:
     logo_b64 = get_local_image_base64(LOGO_FILENAME)
     bg_style = f"background-image: url('{logo_b64}');" if logo_b64 else "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
@@ -219,44 +219,60 @@ if st.session_state.user_role is None:
                     <div class='login-title'>力力坐标工具</div>
     """, unsafe_allow_html=True)
     
-    # 🔥 核心逻辑变更：根据状态显示不同的组件
-    if not st.session_state.show_admin_input:
-        # --- 状态 A: 显示两个入口按钮 ---
-        if st.button("🚀 点击直接开始 (普通用户)", type="primary"):
-            st.session_state.user_role = 'user'
-            log_event("Login", "User Auto-Login")
+    # 🔵 状态 A: 初始选择界面
+    if st.session_state.login_mode == 'select':
+        if st.button("🚀 普通用户登录", type="primary"):
+            st.session_state.login_mode = 'user_input' # 进入用户输入模式
             st.rerun()
         
-        st.write("") # 间距
+        st.write("") 
         
         if st.button("🛡️ 管理员登录"):
-            st.session_state.show_admin_input = True
+            st.session_state.login_mode = 'admin_input' # 进入管理员输入模式
             st.rerun()
+
+    # 🔵 状态 B: 普通用户密码输入
+    elif st.session_state.login_mode == 'user_input':
+        st.caption("🔒 请输入普通用户密码")
+        with st.form("user_login_form"):
+            password = st.text_input("用户密码", type="password", label_visibility="collapsed")
+            submit = st.form_submit_button("解锁进入", type="primary")
             
-    else:
-        # --- 状态 B: 显示管理员密码框 ---
+            if submit:
+                if password == USER_PASSWORD:
+                    st.session_state.user_role = 'user'
+                    st.session_state.login_mode = 'select'
+                    log_event("Login", "User Access")
+                    st.toast("欢迎回来！")
+                    st.rerun()
+                else:
+                    st.error("密码错误")
+        if st.button("⬅️ 返回"):
+            st.session_state.login_mode = 'select'
+            st.rerun()
+
+    # 🔵 状态 C: 管理员密码输入
+    elif st.session_state.login_mode == 'admin_input':
         st.caption("🔒 请输入管理员密码")
         with st.form("admin_login_form"):
             password = st.text_input("管理员密码", type="password", label_visibility="collapsed")
-            submit = st.form_submit_button("解锁后台")
+            submit = st.form_submit_button("解锁后台", type="primary")
             
             if submit:
                 if password == ADMIN_PASSWORD:
                     st.session_state.user_role = 'admin'
-                    st.session_state.show_admin_input = False # 重置状态
-                    st.toast("🎉 管理员身份已验证")
+                    st.session_state.login_mode = 'select'
+                    st.toast("管理员身份已验证")
                     st.rerun()
                 else:
                     st.error("密码错误")
-        
-        # 返回按钮
         if st.button("⬅️ 返回"):
-            st.session_state.show_admin_input = False
+            st.session_state.login_mode = 'select'
             st.rerun()
 
     st.markdown("</div></div></div>", unsafe_allow_html=True) 
 
-# --- 2. 管理员后台界面 (密码 0521 进入) ---
+# --- 2. 管理员后台界面 ---
 elif st.session_state.user_role == 'admin':
     st.title("🛡️ 管理员后台")
     
@@ -279,7 +295,7 @@ elif st.session_state.user_role == 'admin':
     st.download_button("📥 导出 CSV", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
 
 
-# --- 3. 普通用户界面 (免密直接进，标准白底风格) ---
+# --- 3. 普通用户界面 ---
 elif st.session_state.user_role == 'user':
     
     # 侧边栏
@@ -291,7 +307,7 @@ elif st.session_state.user_role == 'user':
         app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别"], index=2)
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v29.0")
+    st.title("力力的坐标工具 v30.0")
     
     # 模式 1: 手动
     if app_mode == "🖐️ 手动输入":
