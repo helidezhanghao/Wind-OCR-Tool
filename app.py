@@ -21,7 +21,7 @@ LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png" # 🔥 请确保目录下有这个文件
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v26.4", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v26.5", page_icon="📲", layout="wide")
 
 # 🔥🔥🔥 核心：深度定制 CSS 以实现逼真的 iOS 风格 🔥🔥🔥
 st.markdown("""
@@ -91,34 +91,35 @@ st.markdown("""
         div.stButton > button:active { transform: scale(0.97); background-color: #D1D1D6; }
         button[kind="primary"] { background-color: var(--ios-blue) !important; color: white !important; }
 
-        /* --- 6. 登录界面专用样式 (v26.4 Logo版) --- */
+        /* --- 6. 登录界面专用样式 (v26.5 全屏 Logo 版) --- */
         .login-wrapper { display: flex; justify-content: center; align-items: center; min-height: 70vh; }
         .login-box {
             background: var(--ios-card-bg);
-            padding: 2.5rem 2rem; /* 恢复内边距 */
+            padding: 0; /* 🔥 关键：移除内边距，让图片贴边 */
             border-radius: 32px;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
             text-align: center;
             max-width: 400px; width: 94%;
             margin: auto;
+            overflow: hidden; /* 🔥 关键：隐藏溢出，确保图片跟随圆角裁切 */
         }
-        /* 新增：Logo和标题的横向布局容器 */
-        .login-branding {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 2rem;
-            gap: 12px; /* Logo和文字的间距 */
+        /* 新增：顶部横幅图片容器 */
+        .login-banner-image {
+            width: 100%;
+            height: 220px; /* 可以根据需要调整横幅高度 */
+            background-size: cover; /* 确保图片充满容器 */
+            background-position: center;
+            /* 如果没有图片，显示一个默认的渐变背景 */
+            background: linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%);
         }
-        .login-logo-img {
-            width: 48px; height: 48px; /* Logo大小 */
-            border-radius: 10px;
-            object-fit: contain;
+        /* 新增：下方内容区域容器 */
+        .login-content-wrapper {
+            padding: 2rem 2.5rem 2.5rem 2.5rem; /* 给文本和输入框添加内边距 */
         }
-        .login-logo-placeholder { font-size: 3rem; }
+        
         .login-title { 
-            font-size: 1.6rem; font-weight: 800; color: #000;
-            margin: 0; line-height: 1.2;
+            font-size: 1.8rem; font-weight: 800; color: #000;
+            margin-bottom: 1.5rem; line-height: 1.2;
         }
 
         /* --- 7. 管理员卡片 --- */
@@ -136,8 +137,8 @@ st.markdown("""
             [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; flex: 1 1 auto !important; margin-bottom: 8px; }
         }
         @media (max-width: 380px) {
-            .login-box { padding: 2rem 1.5rem; }
-            .login-title { font-size: 1.4rem; } /* 小屏下字体稍微调小 */
+            .login-content-wrapper { padding: 1.5rem; } /* 小屏下减小内边距 */
+            .login-title { font-size: 1.6rem; }
         }
         
         img { border-radius: 16px; }
@@ -146,12 +147,12 @@ st.markdown("""
 
 # ================= 日志与工具函数 =================
 
-# 🔥 新增：读取本地图片并转为 Base64 的函数
+# 读取本地图片并转为 Base64
 def get_local_image_base64(path):
     try:
         with open(path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-            return f"data:image/png;base64,{encoded_string}" # 假设是png
+            return f"data:image/png;base64,{encoded_string}" # 假设是png/jpg
     except FileNotFoundError:
         return None
 
@@ -247,25 +248,25 @@ def recognize_image_with_zhipu(image):
 if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
-# --- 1. 登录界面 (v26.4 Logo版) ---
+# --- 1. 登录界面 (v26.5 全屏 Logo 版) ---
 if st.session_state.user_role is None:
     # 尝试读取本地 logo.png
     logo_b64 = get_local_image_base64(LOGO_FILENAME)
     
-    # 如果读到了图片就用图片，读不到就用 emoji 占位
+    # 构建背景样式的 CSS 字符串
+    bg_style = ""
     if logo_b64:
-        logo_html = f'<img src="{logo_b64}" class="login-logo-img">'
-    else:
-        logo_html = '<div class="login-logo-placeholder">🗺️</div>'
+        # 如果有图片，设置为背景并覆盖
+        bg_style = f"background-image: url('{logo_b64}');"
+    # 否则使用 CSS里定义的默认渐变背景
 
-    # 使用新的横向布局结构
+    # HTML 结构：Banner 在上，内容在下
     st.markdown(f"""
         <div class='login-wrapper'>
             <div class='login-box'>
-                <div class='login-branding'>
-                    {logo_html}
+                <div class='login-banner-image' style="{bg_style}"></div>
+                <div class='login-content-wrapper'>
                     <div class='login-title'>力力坐标工具</div>
-                </div>
     """, unsafe_allow_html=True)
     
     with st.form("login_form"):
@@ -286,7 +287,7 @@ if st.session_state.user_role is None:
             else:
                 st.error("密码错误")
     
-    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown("</div></div></div>", unsafe_allow_html=True) # 关闭所有 div
 
 # --- 2. 管理员后台界面 (保持不变) ---
 elif st.session_state.user_role == 'admin':
