@@ -20,131 +20,132 @@ ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v25.0 (iOS Style)", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v26.0 (Deep iOS)", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 核心：深度定制 CSS 以实现 iOS 16 风格 🔥🔥🔥
+# 🔥🔥🔥 核心：深度定制 CSS 以实现逼真的 iOS 风格 🔥🔥🔥
 st.markdown("""
     <style>
+        /* --- 定义 iOS 颜色变量 --- */
+        :root {
+            --ios-bg: #F2F2F7;             /* 系统背景灰 */
+            --ios-card-bg: #FFFFFF;        /* 卡片纯白 */
+            --ios-blue: #007AFF;           /* 官方蓝色 */
+            --ios-text-primary: #000000;   /* 主要文本 */
+            --ios-text-secondary: #8E8E93; /* 次要文本 */
+            --ios-input-bg: #EBEBF0;       /* 输入框填充灰 (关键!) */
+            --ios-divider: #C6C6C8;        /* 分割线 */
+        }
+
         /* --- 1. 全局设置 --- */
-        /* iOS 标志性的浅灰背景和系统字体栈 */
         html, body, [class*="css"] {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #F2F2F7 !important; /* iOS 系统背景灰 */
-            color: #1C1C1E; /* iOS 主要文本色 */
+            /* 优先使用苹果系统字体 */
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+            background-color: var(--ios-bg) !important;
+            color: var(--ios-text-primary);
         }
-        /* 移除顶部多余空白，让界面更紧凑 */
+        /* 顶部留白，模拟导航栏下方 */
         .block-container {
-            padding-top: 2rem !important;
+            padding-top: 1rem !important;
             padding-bottom: 4rem !important;
-            max-width: 1000px; /* 限制最大宽度，大屏显示更精致 */
+            max-width: 960px;
         }
-        #MainMenu {visibility: hidden;} footer {visibility: hidden;}
+        /* 彻底隐藏底部 Footer 和菜单按钮 */
+        footer {display: none !important;}
+        #MainMenu {display: none !important;}
+        .stDeployButton {display: none !important;}
 
         /* --- 2. 标题与文本 --- */
         h1 {
             font-weight: 800 !important;
-            font-size: 2.2rem !important;
+            font-size: 2rem !important;
             letter-spacing: -0.5px;
-            color: #000000;
+            margin-bottom: 1rem !important;
         }
-        h2, h3 {
-            font-weight: 700 !important;
-            color: #1C1C1E;
-        }
-        .stCaption {
-            color: #8E8E93 !important; /* iOS 次要文本灰 */
-            font-size: 0.9rem;
-        }
+        h2, h3 { font-weight: 700 !important; color: #1C1C1E; }
+        /* 次要文本样式 */
+        .stCaption, p small { color: var(--ios-text-secondary) !important; font-size: 0.95rem; }
+        /* 分割线 */
+        hr { border-color: var(--ios-divider); opacity: 0.5; margin: 1.5em 0; }
 
         /* --- 3. iOS 风格卡片容器 (核心魔法) --- */
-        /* 尝试捕捉主要的内容块，将其变成圆角卡片 */
-        /* 注意：这是一个比较 Hack 的方法，依赖于 Streamlit 的内部结构 */
-        [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] {
-             background-color: #FFFFFF;
-             border-radius: 24px; /* iOS 大圆角 */
+        /* 捕捉主要内容块，变为圆角卡片 */
+        [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] {
+             background-color: var(--ios-card-bg);
+             border-radius: 20px; /* iOS 标准大圆角 */
              padding: 24px;
              /* 极其柔和、扩散的阴影，模拟浮层感 */
-             box-shadow: 0 8px 32px rgba(0,0,0,0.04); 
+             box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.03);
              margin-bottom: 24px;
              border: none;
         }
-        /* 侧边栏样式调整 */
-        [data-testid="stSidebar"] {
-            background-color: #FFFFFF; /* 纯白侧边栏 */
-            border-right: 1px solid #E5E5EA;
+        /* 侧边栏纯白背景 */
+        [data-testid="stSidebar"] { background-color: var(--ios-card-bg); border-right: 1px solid #E5E5EA; }
+
+        /* --- 4. iOS 控件风格 (关键升级!) --- */
+        /* 文本输入框：浅灰填充，无边框，大圆角 */
+        [data-testid="stTextInput"] input {
+            background-color: var(--ios-input-bg) !important;
+            border: none !important;
+            border-radius: 12px !important;
+            height: 48px; /* 更大的触控区域 */
+            padding: 0 16px;
+            font-size: 17px;
+        }
+        /* 下拉选择框：同上 */
+        [data-testid="stSelectbox"] div[class*="control"] {
+            background-color: var(--ios-input-bg) !important;
+            border: none !important;
+            border-radius: 12px !important;
+            height: 48px;
+        }
+        /* 文件上传区域 */
+        [data-testid='stFileUploader'] section {
+            border-radius: 16px;
+            background-color: var(--ios-input-bg);
+            border: 2px dashed #D1D1D6;
         }
 
-        /* --- 4. 按钮美化 (胶囊形状) --- */
+        /* --- 5. 按钮美化 (胶囊形状) --- */
         div.stButton > button {
-            width: 100%;
-            border-radius: 999px !important; /* 胶囊/药丸形状 */
-            height: 3.5em;
+            border-radius: 100px !important; /* 完美的胶囊/药丸形状 */
+            height: 52px;
             font-weight: 600;
             font-size: 17px !important;
             border: none !important;
             box-shadow: none !important;
-            transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); /* iOS 弹性动画曲线 */
-            background-color: #E5E5EA; /* 默认次要按钮背景 */
-            color: #007AFF; /* 默认文字色为 iOS 蓝 */
+            background-color: #E5E5EA; /* 次要按钮背景 */
+            color: var(--ios-blue) !important; /* 次要按钮文字蓝 */
+            transition: transform 0.15s ease;
         }
-        /* 按下效果 */
-        div.stButton > button:active {
-            transform: scale(0.96); /* 缩放反馈 */
-            opacity: 0.8;
-        }
+        /* 按下缩放效果 */
+        div.stButton > button:active { transform: scale(0.97); background-color: #D1D1D6; }
         /* 主按钮（Primary）强调样式 */
         button[kind="primary"] {
-            background-color: #007AFF !important; /* iOS 官方蓝色 */
+            background-color: var(--ios-blue) !important;
             color: white !important;
         }
 
-        /* --- 5. 输入框与选择器优化 --- */
-        /* 让输入框更圆润，背景更柔和 */
-        [data-testid="stTextInput"] input, [data-testid="stSelectbox"] div[class*="control"] {
-            border-radius: 12px !important;
-            border: 1px solid #E5E5EA;
-            background-color: #F2F2F7; /* 输入框内部浅灰 */
-            padding-left: 12px;
-        }
-        /* 文件上传区域美化 */
-        [data-testid='stFileUploader'] section {
-            border-radius: 16px;
-            background-color: #F9F9F9;
-            border: 2px dashed #E5E5EA;
-        }
-
         /* --- 6. 登录界面专用样式 --- */
-        .login-wrapper {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 60vh;
-        }
+        .login-wrapper { display: flex; justify-content: center; align-items: center; min-height: 70vh; }
         .login-box {
-            background: #FFFFFF;
-            padding: 3rem;
+            background: var(--ios-card-bg); padding: 3rem 2.5rem;
             border-radius: 32px; /* 超大圆角 */
-            box-shadow: 0 20px 60px rgba(0,0,0,0.08); /* 更强的悬浮感 */
-            text-align: center;
-            max-width: 400px;
-            width: 90%;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.06);
+            text-align: center; max-width: 420px; width: 90%;
         }
-        .login-icon { font-size: 4rem; margin-bottom: 1rem; }
-        .login-title { font-size: 1.6rem; font-weight: 800; margin-bottom: 1.5rem; color: #000;}
+        .login-icon { font-size: 4.5rem; margin-bottom: 0.5rem; }
+        .login-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 2rem; color: #000;}
 
         /* --- 7. 管理员卡片 (Widget 风格) --- */
         .metric-card {
-            background-color: #FFFFFF;
-            padding: 24px;
-            border-radius: 24px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.03);
-            text-align: center;
+            background-color: var(--ios-card-bg); padding: 24px; border-radius: 22px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.03); text-align: center;
         }
-        .metric-card h3 { font-size: 0.9rem; color: #8E8E93; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-        .metric-card h1 { font-size: 2.5rem; font-weight: 800; color: #007AFF; margin: 0;}
+        .metric-card h3 { font-size: 0.85rem; color: var(--ios-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+        .metric-card h1 { font-size: 2.8rem; font-weight: 800; color: var(--ios-text-primary); margin: 0; line-height: 1.1;}
         
-        /* --- 分割线 --- */
-        hr { border-color: #E5E5EA; margin: 2em 0; }
+        /* 图片圆角 */
+        img { border-radius: 16px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -253,7 +254,7 @@ if st.session_state.user_role is None:
     """, unsafe_allow_html=True)
     
     with st.form("login_form"):
-        # 使用 label_visibility="collapsed" 隐藏默认标签，用 placeholder 代替，更像原生 App
+        # 使用 placeholder 代替 label，更像原生 App
         password = st.text_input("密码", type="password", placeholder="请输入访问密码", label_visibility="collapsed")
         st.write("") # 空隙
         submit = st.form_submit_button("解锁进入", type="primary") # iOS 蓝色主按钮
@@ -400,13 +401,15 @@ elif st.session_state.user_role == 'user':
             if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
             if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
             
-            img_file = st.file_uploader("选择图片", type=['png', 'jpg', 'jpeg'], label_visibility="collapsed")
+            # 核心：使用 container 包裹上传组件，配合 CSS 实现 iOS 风格
+            with st.container():
+                img_file = st.file_uploader("选择图片", type=['png', 'jpg', 'jpeg'], label_visibility="collapsed")
             
             if img_file:
                 opened_img = Image.open(img_file)
                 st.session_state.raw_img = ImageOps.exif_transpose(opened_img)
-                # 给图片加个圆角
-                st.markdown(f'<img src="data:image/jpeg;base64,{image_to_base64(st.session_state.raw_img)}" style="width:100%; border-radius: 16px; margin-bottom: 16px;">', unsafe_allow_html=True)
+                # 手动显示图片，以便添加圆角样式
+                st.markdown(f'<img src="data:image/jpeg;base64,{image_to_base64(st.session_state.raw_img)}" style="width:100%; border-radius: 16px; margin-top: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">', unsafe_allow_html=True)
                 
                 if st.button("开始识别", type="primary"):
                     log_event("AI Recognize", "Start")
