@@ -13,31 +13,31 @@ from io import BytesIO
 from datetime import datetime
 import csv
 
-# --- 全局配置 (保持不变) ---
+# --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
 USER_PASSWORD = "2026"  # 用户密码
 ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
-LOGO_FILENAME = "logo.png" # 🔥 请确保目录下有这个文件
+LOGO_FILENAME = "logo.png" # 🔥 必须上传这个文件
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v26.7", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v26.8", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 核心：深度定制 CSS 以实现逼真的 iOS 风格 🔥🔥🔥
+# 🔥🔥🔥 核心 CSS：深度定制 iOS 风格 🔥🔥🔥
 st.markdown("""
     <style>
         /* --- 定义 iOS 颜色变量 --- */
         :root {
-            --ios-bg: #F2F2F7;             /* 系统背景灰 */
-            --ios-card-bg: #FFFFFF;        /* 卡片纯白 */
-            --ios-blue: #007AFF;           /* 官方蓝色 */
-            --ios-text-primary: #000000;   /* 主要文本 */
-            --ios-text-secondary: #8E8E93; /* 次要文本 */
-            --ios-input-bg: #EBEBF0;       /* 输入框填充灰 */
-            --ios-divider: #C6C6C8;        /* 分割线 */
+            --ios-bg: #F2F2F7;
+            --ios-card-bg: #FFFFFF;
+            --ios-blue: #007AFF;
+            --ios-text-primary: #000000;
+            --ios-text-secondary: #8E8E93;
+            --ios-input-bg: #EBEBF0;
+            --ios-divider: #C6C6C8;
         }
 
-        /* --- 1. 全局设置 --- */
+        /* --- 全局设置 --- */
         html, body, [class*="css"] {
             font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
             background-color: var(--ios-bg) !important;
@@ -52,13 +52,7 @@ st.markdown("""
         #MainMenu {display: none !important;}
         .stDeployButton {display: none !important;}
 
-        /* --- 2. 标题与文本 --- */
-        h1 { font-weight: 800 !important; font-size: 2rem !important; letter-spacing: -0.5px; margin-bottom: 1rem !important; }
-        h2, h3 { font-weight: 700 !important; color: #1C1C1E; }
-        .stCaption, p small { color: var(--ios-text-secondary) !important; font-size: 0.95rem; }
-        hr { border-color: var(--ios-divider); opacity: 0.5; margin: 1.5em 0; }
-
-        /* --- 3. iOS 风格卡片容器 --- */
+        /* --- 卡片容器 --- */
         [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] {
              background-color: var(--ios-card-bg);
              border-radius: 20px;
@@ -68,7 +62,7 @@ st.markdown("""
         }
         [data-testid="stSidebar"] { background-color: var(--ios-card-bg); border-right: 1px solid #E5E5EA; }
 
-        /* --- 4. iOS 控件风格 --- */
+        /* --- 控件风格 --- */
         [data-testid="stTextInput"] input {
             background-color: var(--ios-input-bg) !important; border: none !important;
             border-radius: 12px !important; height: 48px; padding: 0 16px; font-size: 17px;
@@ -81,7 +75,7 @@ st.markdown("""
             border-radius: 16px; background-color: var(--ios-input-bg); border: 2px dashed #D1D1D6;
         }
 
-        /* --- 5. 按钮美化 --- */
+        /* --- 按钮美化 --- */
         div.stButton > button {
             border-radius: 100px !important; height: 52px; font-weight: 600;
             font-size: 17px !important; border: none !important; box-shadow: none !important;
@@ -91,66 +85,58 @@ st.markdown("""
         div.stButton > button:active { transform: scale(0.97); background-color: #D1D1D6; }
         button[kind="primary"] { background-color: var(--ios-blue) !important; color: white !important; }
 
-        /* --- 6. 登录界面专用样式 (V26.7 修正版) --- */
+        /* --- 6. 登录界面专用样式 (V26.8 修复版) --- */
         .login-wrapper { display: flex; justify-content: center; align-items: center; min-height: 70vh; }
         
         .login-box {
             background: var(--ios-card-bg);
-            padding: 0; /* ❌ 去掉内边距，让图片贴边 */
+            /* 增加内边距，让内容呼吸 */
+            padding: 3rem 2rem; 
             border-radius: 32px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.12);
             text-align: center;
-            max-width: 400px; width: 94%;
+            max-width: 380px; width: 90%;
             margin: auto;
-            overflow: hidden; /* ❌ 必须隐藏溢出，否则图片不跟随圆角 */
         }
 
-        /* 顶部横幅图片容器 */
-        .login-banner-image {
-            width: 100%;
-            height: 200px; /* 调整高度 */
-            background-size: cover; /* 充满容器 */
-            
-            /* 🔥🔥🔥 核心修改：强制图片居中对齐，截取中间区域 🔥🔥🔥 */
-            background-position: center center !important; 
-            
-            background-repeat: no-repeat;
-        }
-
-        /* 下方内容区域容器 */
-        .login-content-wrapper {
-            padding: 2rem 2.5rem 2.5rem 2.5rem; /* 内容保留内边距 */
+        /* Logo 图片容器：确保图片自适应且不被裁切 */
+        .login-logo-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 2rem;
         }
         
-        .login-title { 
-            font-size: 1.8rem; font-weight: 800; color: #000;
-            margin-bottom: 1.5rem; line-height: 1.2;
+        .login-logo-img {
+            /* 关键修改：最大宽度限制，高度自适应，保持比例 */
+            max-width: 180px; 
+            height: auto;
+            object-fit: contain; /* 确保完整显示 */
+            border-radius: 12px; /* 给图片加一点圆角 */
         }
+        
+        .login-logo-placeholder { font-size: 4rem; margin-bottom: 1rem; }
 
-        /* --- 7. 管理员卡片 --- */
+        /* --- Admin 卡片适配 --- */
         .metric-card {
             background-color: var(--ios-card-bg); padding: 24px; border-radius: 22px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.03); text-align: center;
-            height: 100%;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.03); text-align: center; height: 100%;
         }
-        .metric-card h3 { font-size: 0.85rem; color: var(--ios-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
-        .metric-card h1 { font-size: 2.5rem; font-weight: 800; color: var(--ios-text-primary); margin: 0; line-height: 1.1;}
+        .metric-card h1 { font-size: 2.5rem; font-weight: 800; color: var(--ios-text-primary); margin: 0;}
         
-        /* --- 8. 移动端适配 --- */
+        /* 移动端适配 */
         @media (max-width: 768px) {
             [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 16px; }
             [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; flex: 1 1 auto !important; margin-bottom: 8px; }
         }
         @media (max-width: 380px) {
-            .login-content-wrapper { padding: 1.5rem; }
-            .login-title { font-size: 1.6rem; }
+            .login-box { padding: 2rem 1.5rem; }
         }
         
         img { border-radius: 16px; }
     </style>
 """, unsafe_allow_html=True)
 
-# ================= 日志与工具函数 =================
+# ================= 工具函数 =================
 
 def get_local_image_base64(path):
     try:
@@ -252,26 +238,24 @@ def recognize_image_with_zhipu(image):
 if 'user_role' not in st.session_state:
     st.session_state.user_role = None
 
-# --- 1. 登录界面 (V26.7 修正版) ---
+# --- 1. 登录界面 (v26.8 终极修复版) ---
 if st.session_state.user_role is None:
-    # 读取本地 logo.png
+    # 尝试读取 logo.png
     logo_b64 = get_local_image_base64(LOGO_FILENAME)
     
-    bg_style = ""
+    # 核心修改：只放图片，完全移除文字标题
     if logo_b64:
-        # 如果有图片，设置为背景，并强制居中
-        bg_style = f"background-image: url('{logo_b64}');"
+        logo_html = f'<img src="{logo_b64}" class="login-logo-img">'
     else:
-        # 默认蓝色背景
-        bg_style = "background: linear-gradient(135deg, #007AFF 0%, #5AC8FA 100%);"
+        # 如果没传图片，给一个大号emoji兜底
+        logo_html = '<div class="login-logo-placeholder">🗺️</div>'
 
-    # HTML 结构
     st.markdown(f"""
         <div class='login-wrapper'>
             <div class='login-box'>
-                <div class='login-banner-image' style="{bg_style}"></div>
-                <div class='login-content-wrapper'>
-                    <div class='login-title'>力力坐标工具</div>
+                <div class='login-logo-container'>
+                    {logo_html}
+                </div>
     """, unsafe_allow_html=True)
     
     with st.form("login_form"):
@@ -292,7 +276,7 @@ if st.session_state.user_role is None:
             else:
                 st.error("密码错误")
     
-    st.markdown("</div></div></div>", unsafe_allow_html=True) 
+    st.markdown("</div></div>", unsafe_allow_html=True) 
 
 # --- 2. 管理员后台界面 (保持不变) ---
 elif st.session_state.user_role == 'admin':
