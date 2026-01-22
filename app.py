@@ -16,7 +16,7 @@ from streamlit_cropper import st_cropper
 # 🔥 你的 Key (保持不变)
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
 
-st.set_page_config(page_title="力力的坐标工具 v22.0 (Flash版)", page_icon="🤖", layout="centered")
+st.set_page_config(page_title="力力的坐标工具 v22.1 (优化展示)", page_icon="🤖", layout="centered")
 
 # ================= 工具函数 =================
 
@@ -86,7 +86,6 @@ def recognize_image_with_zhipu(image):
         img_base64 = image_to_base64(image)
         
         response = client.chat.completions.create(
-            # 🔥 关键修改：换成了免费/便宜的 flash 模型
             model="glm-4v-flash",
             messages=[
                 {
@@ -94,7 +93,8 @@ def recognize_image_with_zhipu(image):
                     "content": [
                         {
                             "type": "text",
-                            "text": "请识别图片中的表格数据。直接提取 编号、纬度/X、经度/Y。请直接返回纯 JSON 数组字符串，不要用markdown代码块包裹。格式示例：[{\"编号\": \"T1\", \"纬度/X\": 34.12, \"经度/Y\": 115.33}]"
+                            # 🔥 关键修改：要求返回字符串，并给出带符号的示例
+                            "text": "请识别图片中的表格数据。直接提取 编号、纬度/X、经度/Y。请直接返回纯 JSON 数组字符串。请务必保持原始图片中的坐标格式（如字符串形式的度分秒），不要自动转换为小数。格式示例：[{\"编号\": \"T1\", \"纬度/X\": \"34°12'05.1\\\"N\", \"经度/Y\": \"115°33'10.5\\\"E\"}]"
                         },
                         {
                             "type": "image_url",
@@ -115,7 +115,7 @@ def recognize_image_with_zhipu(image):
 
 # ================= 界面主逻辑 =================
 
-st.title("🤖 力力的坐标工具 v22.0 (Flash版)")
+st.title("🤖 力力的坐标工具 v22.1 (优化展示)")
 
 # --- 侧边栏 ---
 with st.sidebar:
@@ -211,7 +211,7 @@ elif app_mode == "📸 AI图片识别":
                 try:
                     data = json.loads(clean_result)
                     st.session_state.parsed_df = pd.DataFrame(data)
-                    st.success("识别成功！")
+                    st.success("识别成功！请核对下方表格中的原始数据。")
                 except:
                     st.error("AI 返回的数据格式有误，请在下方手动修正 JSON。")
 
@@ -222,23 +222,30 @@ elif app_mode == "📸 AI图片识别":
             st.text_area("JSON Raw", st.session_state.ai_json_text, height=100)
 
         if st.session_state.parsed_df is not None:
-            st.caption("👇 请核对数据：")
+            st.caption("👇 **请核对数据**（AI现已保留原始格式，方便与图片对比）：")
+            
+            # 🔥 这个区域是必须保留的，用于告诉程序如何处理上面的原始数据
             c1, c2 = st.columns(2)
             with c1:
-                coord_mode = st.selectbox("图片里的坐标格式是？", ["Decimal", "DMS", "DDM", "CGCS2000"])
+                st.info("👈 **关键步骤**：请告诉程序，图片里的坐标是什么格式？（用于生成正确的 KMZ）")
+                coord_mode = st.selectbox("坐标格式选择", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"])
             cm = 0
             with c2:
-                if coord_mode == "CGCS2000":
+                if coord_mode == "CGCS2000 (投影)":
                     cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
-                    cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+                    cm = st.selectbox("中央经线 (CGCS2000必选)", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+                else:
+                    st.empty() # 占位
 
             final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", use_container_width=True)
             
             if st.button("🚀 生成 KMZ"):
-                kml, count = generate_kmz(final_df, coord_mode, cm)
+                # 简单的映射回去，保持后端逻辑不变
+                mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000"}
+                kml, count = generate_kmz(final_df, mode_map[coord_mode], cm)
                 if count > 0:
                     kml.save("zhipu_result.kmz")
                     with open("zhipu_result.kmz", "rb") as f:
                         st.download_button("📥 下载文件", f, "zhipu_result.kmz", type="primary")
                 else:
-                    st.error("无有效数据。")
+                    st.error("无有效数据。请检查坐标格式选择是否正确。")
