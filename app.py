@@ -9,9 +9,11 @@ import numpy as np
 from zhipuai import ZhipuAI
 import json
 import base64
-from io import BytesIO
+from io import BytesIO, StringIO
 from datetime import datetime
 import csv
+import zipfile
+import xml.etree.ElementTree as ET
 
 # --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
@@ -21,9 +23,9 @@ LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v30.4", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v31.0", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 CSS 样式 (保持 v30.3 不变) 🔥🔥🔥
+# 🔥🔥🔥 CSS 样式 (保持 v30.4 不变) 🔥🔥🔥
 st.markdown("""
     <style>
         footer {display: none !important;}
@@ -88,6 +90,11 @@ st.markdown("""
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
             margin-bottom: 10px;
         }
+        
+        @media (max-width: 768px) {
+            [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 10px; }
+            [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; }
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -136,9 +143,10 @@ def to_wgs84(v1, v2, cm, swap):
 def generate_kmz(df, coord_mode, cm=0):
     kml = simplekml.Kml()
     valid_count = 0
-    keys_v1 = ["纬度/X", "纬度", "Latitude", "lat", "Lat", "X", "x"]
-    keys_v2 = ["经度/Y", "经度", "Longitude", "lon", "Lon", "Y", "y"]
-    keys_id = ["编号", "ID", "id", "Name", "name"]
+    # 智能列名匹配列表
+    keys_v1 = ["纬度/X", "纬度", "Latitude", "lat", "Lat", "X", "x", "LAT", "Lat(N)"]
+    keys_v2 = ["经度/Y", "经度", "Longitude", "lon", "Lon", "Y", "y", "LON", "Lon(E)"]
+    keys_id = ["编号", "ID", "id", "Name", "name", "No"]
 
     for i, row in df.iterrows():
         try:
@@ -185,6 +193,167 @@ def generate_kmz(df, coord_mode, cm=0):
         except: continue
     return kml, valid_count
 
+# 🔥🔥🔥 新增：万能格式解析器 🔥🔥🔥
+def parse_universal_file(uploaded_file):
+    fname = uploaded_file.name.lower()
+    data_list = []
+    
+    # 1. 处理压缩包 (KMZ, OVKMZ)
+    if fname.endswith(('.kmz', '.ovkmz', '.zip')):
+        try:
+            with zipfile.ZipFile(uploaded_file) as z:
+                # 寻找里面的 kml 文件
+                kml_files = [f for f in z.namelist() if f.lower().endswith(('.kml', '.ovkml'))]
+                if kml_files:
+                    with z.open(kml_files[0]) as f:
+                        content = f.read().decode('utf-8', errors='ignore')
+                        # 递归调用文本解析
+                        return parse_text_content(content, 'kml')
+        except Exception as e:
+            st.warning(f"压缩包解析失败: {e}")
+            return None
+
+    # 2. 处理文本类 (KML, OVKML, GPX, PLT)
+    elif fname.endswith(('.kml', '.ovkml', '.gpx', '.plt')):
+        content = uploaded_file.getvalue().decode('utf-8', errors='ignore')
+        return parse_text_content(content, fname.split('.')[-1])
+
+    # 3. 处理 DXF (文本暴力正则)
+    elif fname.endswith('.dxf'):
+        content = uploaded_file.getvalue().decode('utf-8', errors='ignore')
+        # DXF 暴力匹配组码 10 (X) 和 20 (Y)
+        # 这是一个简化版解析，仅适用于简单DXF
+        return parse_dxf_regex(content)
+
+    # 4. 处理 SHP (二进制，需要 geopandas)
+    elif fname.endswith('.shp'):
+        try:
+            import geopandas as gpd
+            # Streamlit 上传的是 BytesIO，Geopandas 读取需要技巧
+            # 这里为了简单，我们提示用户 shp 最好是 zip 上传，或者用临时文件
+            with st.spinner("正在尝试通过 Geopandas 读取 SHP..."):
+                # 保存到临时文件
+                with open("temp.shp", "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                gdf = gpd.read_file("temp.shp")
+                # 转换坐标系到 WGS84
+                if gdf.crs:
+                    gdf = gdf.to_crs(epsg=4326)
+                
+                for idx, row in gdf.iterrows():
+                    geom = row.geometry
+                    if geom.geom_type == 'Point':
+                        data_list.append({"编号": f"P{idx}", "纬度": geom.y, "经度": geom.x})
+                    # 简化处理：对于线和面，取重心
+                    else:
+                        data_list.append({"编号": f"P{idx}", "纬度": geom.centroid.y, "经度": geom.centroid.x})
+            return pd.DataFrame(data_list)
+        except ImportError:
+            st.error("服务器未安装 Geopandas，无法解析 SHP。请联系管理员安装。")
+            return None
+        except Exception as e:
+            st.error(f"SHP 解析失败 (请确保上传的是标准WGS84或包含投影文件的SHP): {e}")
+            return None
+
+    # 5. 处理加密/二进制 (OVBJ, DWG) -> 暴力正则尝试
+    else:
+        st.info("⚠️ 检测到二进制/加密格式 (OVBJ/DWG等)，尝试暴力提取文本坐标...")
+        try:
+            # 尝试按文本读取，忽略错误
+            content = uploaded_file.getvalue().decode('latin-1', errors='ignore') # latin-1 能读所有字节
+            # 暴力正则：找经纬度样式的数字对 (例如 103.123, 35.123)
+            return parse_regex_brute_force(content)
+        except:
+            return None
+
+    return None
+
+def parse_text_content(content, fmt):
+    data = []
+    # KML / OVKML 解析
+    if 'kml' in fmt:
+        try:
+            # 简单去除 namespace 方便解析
+            content = re.sub(r'xmlns="[^"]+"', '', content, count=1)
+            root = ET.fromstring(content)
+            for placemark in root.findall(".//Placemark"):
+                name = placemark.find("name")
+                name_txt = name.text if name is not None else "NoName"
+                coords = placemark.find(".//coordinates")
+                if coords is not None and coords.text:
+                    # KML 格式: lon,lat,alt
+                    c_str = coords.text.strip().split()[0] # 只取第一个点
+                    parts = c_str.split(',')
+                    if len(parts) >= 2:
+                        data.append({"编号": name_txt, "纬度": float(parts[1]), "经度": float(parts[0])})
+        except: pass
+
+    # GPX 解析
+    elif 'gpx' in fmt:
+        try:
+            root = ET.fromstring(content)
+            # 解析 wpt (Waypoints)
+            for wpt in root.findall(".//wpt"): # namespace ignored for simplicity or assume stripped
+                lat = wpt.get("lat")
+                lon = wpt.get("lon")
+                name = wpt.find("name")
+                name_txt = name.text if name is not None else "WPT"
+                if lat and lon:
+                    data.append({"编号": name_txt, "纬度": float(lat), "经度": float(lon)})
+            # 解析 trkpt (Tracks) - 可选，量大慎用
+        except: pass
+
+    # PLT (OziExplorer) 解析
+    elif 'plt' in fmt:
+        lines = content.splitlines()
+        for line in lines[6:]: # Skip header
+            parts = line.strip().split(',')
+            if len(parts) > 4:
+                # PLT: Lat, Lon are usually index 0 and 1 or similar
+                try:
+                    lat = float(parts[0])
+                    lon = float(parts[1])
+                    data.append({"编号": "PLT_PT", "纬度": lat, "经度": lon})
+                except: pass
+    
+    return pd.DataFrame(data)
+
+def parse_dxf_regex(content):
+    # 极简 DXF 坐标提取 (提取 AcDbPoint)
+    data = []
+    lines = content.splitlines()
+    x, y = None, None
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if line == '10': # X code
+            try: x = float(lines[i+1].strip())
+            except: pass
+        if line == '20': # Y code
+            try: y = float(lines[i+1].strip())
+            except: pass
+        
+        if x is not None and y is not None:
+            data.append({"编号": "DXF_PT", "纬度": y, "经度": x}) # DXF通常 Y=Lat(North), X=Lon(East)
+            x, y = None, None # Reset
+    return pd.DataFrame(data)
+
+def parse_regex_brute_force(content):
+    # 暴力匹配所有类似 (103.12345, 30.12345) 的数字对
+    data = []
+    # 正则：匹配 70-140 (经度) 和 10-60 (纬度) 附近的数字
+    # 这是一个启发式规则，假设在中国范围内
+    pattern = r"(\d{2,3}\.\d{4,}),?\s?(\d{2,3}\.\d{4,})"
+    matches = re.findall(pattern, content)
+    for i, (v1, v2) in enumerate(matches):
+        try:
+            val1, val2 = float(v1), float(v2)
+            # 简单判断经纬度 (经度通常 > 纬度 在中国)
+            lat, lon = (val2, val1) if val1 > val2 else (val1, val2)
+            if 0 < lat < 90 and 0 < lon < 180:
+                data.append({"编号": f"RAW_{i}", "纬度": lat, "经度": lon})
+        except: pass
+    return pd.DataFrame(data)
+
 def image_to_base64(image):
     buffered = BytesIO()
     if image.mode != "RGB": image = image.convert("RGB")
@@ -222,9 +391,7 @@ if st.session_state.user_role is None:
     logo_b64 = get_local_image_base64(LOGO_FILENAME)
     bg_style = f"background-image: url('{logo_b64}');" if logo_b64 else "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
 
-    # 外层居中列
     c_left, c_center, c_right = st.columns([2, 1, 2])
-    
     with c_center:
         st.markdown(f"""
             <div class='login-wrapper'>
@@ -314,11 +481,12 @@ elif st.session_state.user_role == 'user':
             st.session_state.user_role = None
             st.rerun() 
         st.divider()
-        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别"], index=2)
+        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "🛠️ 万能格式转换", "📸 AI图片识别"], index=2)
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v30.4")
+    st.title("力力的坐标工具 v31.0")
     
+    # 模式 1: 手动
     if app_mode == "🖐️ 手动输入":
         st.header("🖐️ 手动录入")
         c1, c2 = st.columns(2)
@@ -340,6 +508,7 @@ elif st.session_state.user_role == 'user':
                 with open("manual.kmz", "rb") as f: st.download_button("📥 下载文件", f, "manual.kmz", type="primary")
             else: st.error("数据无效")
 
+    # 模式 2: 文本导入
     elif app_mode == "📄 文本导入":
         st.header("📄 文本导入 (Excel/TXT/CSV)")
         file_buffer = st.file_uploader("上传文件", type=['xlsx', 'xls', 'csv', 'txt'])
@@ -380,6 +549,35 @@ elif st.session_state.user_role == 'user':
                         with open("text_import.kmz", "rb") as f: st.download_button("📥 下载文件", f, "text_import.kmz", type="primary")
             except Exception as e: st.error(f"读取失败: {str(e)}")
 
+    # 模式 3: 万能格式转换
+    elif app_mode == "🛠️ 万能格式转换":
+        st.header("🛠️ 万能格式转换 (硬解一切)")
+        st.caption("支持格式: kml, kmz, ovkml, ovkmz, gpx, plt, dxf (文本), shp (标准)")
+        st.info("💡 提示：OVBJ/DWG 为加密/二进制格式，本工具尝试暴力提取文本，如失败请在源软件中导出为 KML/DXF。")
+        
+        uni_file = st.file_uploader("上传任意地理格式文件", type=['kml', 'kmz', 'ovkml', 'ovkmz', 'gpx', 'plt', 'dxf', 'dwg', 'shp', 'ovbj'])
+        
+        if uni_file:
+            with st.spinner("🚀 正在暴力解析文件..."):
+                parsed_df = parse_universal_file(uni_file)
+            
+            if parsed_df is not None and not parsed_df.empty:
+                st.success(f"✅ 解析成功！共找到 {len(parsed_df)} 个点")
+                st.dataframe(parsed_df)
+                
+                if st.button("🚀 立即转换为 KMZ", type="primary"):
+                    log_event("Generate KMZ", "Universal Hard Decode")
+                    # 这里的 coord_mode 默认为 Decimal，因为解析出来的通常是 WGS84 经纬度
+                    kml, count = generate_kmz(parsed_df, "Decimal", 0)
+                    if count > 0:
+                        kml.save("universal_output.kmz")
+                        with open("universal_output.kmz", "rb") as f: 
+                            st.download_button("📥 下载 KMZ", f, "universal_output.kmz", type="primary")
+                    else: st.error("生成失败")
+            else:
+                st.error("❌ 解析失败或文件中没有提取到有效坐标。")
+
+    # 模式 4: AI
     elif app_mode == "📸 AI图片识别":
         st.header("📸 AI 识别")
         if 'raw_img' not in st.session_state: st.session_state.raw_img = None
@@ -390,7 +588,6 @@ elif st.session_state.user_role == 'user':
         if img_file:
             opened_img = Image.open(img_file)
             st.session_state.raw_img = ImageOps.exif_transpose(opened_img)
-            # 🔥 关键修改：设置宽度为 350px，不再撑满全屏 🔥
             st.image(st.session_state.raw_img, caption="预览", width=350)
             
             if st.button("✨ 开始识别", type="primary"):
