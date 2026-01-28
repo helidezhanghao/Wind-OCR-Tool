@@ -14,16 +14,17 @@ from datetime import datetime
 import csv
 import zipfile
 import xml.etree.ElementTree as ET
+import struct # 🔥 新增：用于二进制数据解包
 
 # --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
-USER_PASSWORD = "2026"  # 普通用户密码
-ADMIN_PASSWORD = "0521" # 管理员密码
+USER_PASSWORD = "2026"
+ADMIN_PASSWORD = "0521"
 LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v31.2", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v31.3", page_icon="📲", layout="wide")
 
 # 🔥🔥🔥 CSS 样式 (保持不变) 🔥🔥🔥
 st.markdown("""
@@ -143,7 +144,6 @@ def to_wgs84(v1, v2, cm, swap):
 def generate_kmz(df, coord_mode, cm=0):
     kml = simplekml.Kml()
     valid_count = 0
-    # 智能列名匹配列表
     keys_v1 = ["纬度/X", "纬度", "Latitude", "lat", "Lat", "X", "x", "LAT", "Lat(N)"]
     keys_v2 = ["经度/Y", "经度", "Longitude", "lon", "Lon", "Y", "y", "LON", "Lon(E)"]
     keys_id = ["编号", "ID", "id", "Name", "name", "No"]
@@ -193,10 +193,54 @@ def generate_kmz(df, coord_mode, cm=0):
         except: continue
     return kml, valid_count
 
-# 万能格式解析器
+# 🔥🔥🔥 新增：二进制浮点数暴力扫描 🔥🔥🔥
+def parse_binary_search(binary_content):
+    data = []
+    # 定义中国大致范围，用于过滤无效的浮点数
+    MIN_LON, MAX_LON = 70.0, 140.0
+    MIN_LAT, MAX_LAT = 3.0, 55.0
+    
+    content_len = len(binary_content)
+    # 每次移动4个字节（float步长）进行扫描
+    step = 4 
+    
+    found_count = 0
+    
+    # 遍历文件字节流
+    for i in range(0, content_len - 16, step):
+        try:
+            # 尝试解包为 Double (8字节, Little Endian)
+            val1 = struct.unpack('<d', binary_content[i:i+8])[0]
+            
+            # 检查 val1 是否可能是经度或纬度
+            is_lat = MIN_LAT < val1 < MAX_LAT
+            is_lon = MIN_LON < val1 < MAX_LON
+            
+            if is_lat or is_lon:
+                # 如果 val1 像个坐标，检查它紧后面的 8 个字节
+                val2 = struct.unpack('<d', binary_content[i+8:i+16])[0]
+                
+                lat, lon = 0, 0
+                if is_lat and (MIN_LON < val2 < MAX_LON):
+                    lat, lon = val1, val2 # 顺序：纬度, 经度
+                elif is_lon and (MIN_LAT < val2 < MAX_LAT):
+                    lat, lon = val2, val1 # 顺序：经度, 纬度
+                
+                # 如果成对成功，添加数据
+                if lat != 0 and lon != 0:
+                    # 简单去重：如果和上一个点极其接近，可能读到了重复数据
+                    if not data or (abs(data[-1]['纬度'] - lat) > 0.000001 or abs(data[-1]['经度'] - lon) > 0.000001):
+                        data.append({"编号": f"BIN_{found_count+1}", "纬度": lat, "经度": lon})
+                        found_count += 1
+                        # 稍微跳过一点，避免重复读取同一组数据
+                        # i += 8 (但这在for循环里不好直接改，先这样)
+        except:
+            pass
+            
+    return pd.DataFrame(data)
+
 def parse_universal_file(uploaded_file):
     fname = uploaded_file.name.lower()
-    data_list = []
     
     # 1. 压缩包
     if fname.endswith(('.kmz', '.ovkmz', '.zip')):
@@ -207,9 +251,7 @@ def parse_universal_file(uploaded_file):
                     with z.open(kml_files[0]) as f:
                         content = f.read().decode('utf-8', errors='ignore')
                         return parse_text_content(content, 'kml')
-        except Exception as e:
-            st.warning(f"压缩包解析失败: {e}")
-            return None
+        except: return None
 
     # 2. 文本类
     elif fname.endswith(('.kml', '.ovkml', '.gpx', '.plt')):
@@ -225,34 +267,40 @@ def parse_universal_file(uploaded_file):
     elif fname.endswith('.shp'):
         try:
             import geopandas as gpd
-            with st.spinner("正在尝试通过 Geopandas 读取 SHP..."):
-                with open("temp.shp", "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                gdf = gpd.read_file("temp.shp")
-                if gdf.crs:
-                    gdf = gdf.to_crs(epsg=4326)
-                
-                for idx, row in gdf.iterrows():
-                    geom = row.geometry
-                    if geom.geom_type == 'Point':
-                        data_list.append({"编号": f"P{idx}", "纬度": geom.y, "经度": geom.x})
-                    else:
-                        data_list.append({"编号": f"P{idx}", "纬度": geom.centroid.y, "经度": geom.centroid.x})
+            with open("temp.shp", "wb") as f: f.write(uploaded_file.getbuffer())
+            gdf = gpd.read_file("temp.shp")
+            if gdf.crs: gdf = gdf.to_crs(epsg=4326)
+            data_list = []
+            for idx, row in gdf.iterrows():
+                geom = row.geometry
+                if geom.geom_type == 'Point':
+                    data_list.append({"编号": f"P{idx}", "纬度": geom.y, "经度": geom.x})
+                else:
+                    data_list.append({"编号": f"P{idx}", "纬度": geom.centroid.y, "经度": geom.centroid.x})
             return pd.DataFrame(data_list)
-        except ImportError:
-            st.error("服务器未安装 Geopandas，无法解析 SHP。")
-            return None
-        except Exception as e:
-            st.error(f"SHP 解析失败: {e}")
-            return None
+        except: return None
 
-    # 5. 加密/二进制 (OVBJ, OVOBJ, DWG)
+    # 5. 二进制/加密格式 (OVOBJ, OVBJ, DWG) -> 启用 🔥二进制深层扫描🔥
     else:
-        st.info(f"⚠️ 检测到二进制/加密格式 ({fname})，正在尝试暴力提取坐标...")
+        st.info(f"⚠️ 正在对二进制文件 {fname} 进行深层数据挖掘...")
         try:
-            content = uploaded_file.getvalue().decode('latin-1', errors='ignore') 
-            return parse_regex_brute_force(content)
-        except:
+            # 读取原始字节流
+            binary_content = uploaded_file.getvalue()
+            
+            # 方法A：先试文本正则 (有些 ovbj 只是简单混淆)
+            text_content = binary_content.decode('latin-1', errors='ignore')
+            df_text = parse_regex_brute_force(text_content)
+            
+            if not df_text.empty:
+                return df_text
+            
+            # 方法B：如果文本正则失败，启动二进制浮点数扫描
+            st.caption("文本提取失败，启动二进制浮点数扫描模式...")
+            df_bin = parse_binary_search(binary_content)
+            return df_bin
+            
+        except Exception as e:
+            st.error(f"解析发生错误: {e}")
             return None
 
     return None
@@ -264,39 +312,27 @@ def parse_text_content(content, fmt):
             content = re.sub(r'xmlns="[^"]+"', '', content, count=1)
             root = ET.fromstring(content)
             for placemark in root.findall(".//Placemark"):
-                name = placemark.find("name")
-                name_txt = name.text if name is not None else "NoName"
                 coords = placemark.find(".//coordinates")
                 if coords is not None and coords.text:
                     c_str = coords.text.strip().split()[0] 
                     parts = c_str.split(',')
                     if len(parts) >= 2:
-                        data.append({"编号": name_txt, "纬度": float(parts[1]), "经度": float(parts[0])})
+                        name = placemark.find("name")
+                        data.append({"编号": name.text if name is not None else "NoName", "纬度": float(parts[1]), "经度": float(parts[0])})
         except: pass
-
     elif 'gpx' in fmt:
         try:
             root = ET.fromstring(content)
             for wpt in root.findall(".//wpt"):
-                lat = wpt.get("lat")
-                lon = wpt.get("lon")
-                name = wpt.find("name")
-                name_txt = name.text if name is not None else "WPT"
-                if lat and lon:
-                    data.append({"编号": name_txt, "纬度": float(lat), "经度": float(lon)})
+                data.append({"编号": wpt.find("name").text if wpt.find("name") is not None else "WPT", "纬度": float(wpt.get("lat")), "经度": float(wpt.get("lon"))})
         except: pass
-
     elif 'plt' in fmt:
         lines = content.splitlines()
         for line in lines[6:]: 
             parts = line.strip().split(',')
             if len(parts) > 4:
-                try:
-                    lat = float(parts[0])
-                    lon = float(parts[1])
-                    data.append({"编号": "PLT_PT", "纬度": lat, "经度": lon})
+                try: data.append({"编号": "PLT_PT", "纬度": float(parts[0]), "经度": float(parts[1])})
                 except: pass
-    
     return pd.DataFrame(data)
 
 def parse_dxf_regex(content):
@@ -305,14 +341,13 @@ def parse_dxf_regex(content):
     x, y = None, None
     for i, line in enumerate(lines):
         line = line.strip()
-        if line == '10': # X
+        if line == '10': 
             try: x = float(lines[i+1].strip())
             except: pass
-        if line == '20': # Y
+        if line == '20': 
             try: y = float(lines[i+1].strip())
             except: pass
-        
-        if x is not None and y is not None:
+        if x and y:
             data.append({"编号": "DXF_PT", "纬度": y, "经度": x})
             x, y = None, None 
     return pd.DataFrame(data)
@@ -460,7 +495,7 @@ elif st.session_state.user_role == 'user':
         app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "🛠️ 万能格式转换", "📸 AI图片识别"], index=2)
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v31.2")
+    st.title("力力的坐标工具 v31.3")
     
     # 模式 1: 手动
     if app_mode == "🖐️ 手动输入":
@@ -484,10 +519,9 @@ elif st.session_state.user_role == 'user':
                 with open("manual.kmz", "rb") as f: st.download_button("📥 下载文件", f, "manual.kmz", type="primary")
             else: st.error("数据无效")
 
-    # 模式 2: 文本导入 (拖拽增强)
+    # 模式 2: 文本导入
     elif app_mode == "📄 文本导入":
         st.header("📄 文本导入 (Excel/TXT/CSV)")
-        # 🔥🔥🔥 提示语增强 🔥🔥🔥
         file_buffer = st.file_uploader("📄 点击上传或直接拖拽文件到此处 (Excel/TXT/CSV)", type=['xlsx', 'xls', 'csv', 'txt'])
         if file_buffer:
             try:
@@ -531,7 +565,6 @@ elif st.session_state.user_role == 'user':
         st.header("🛠️ 万能格式转换 (硬解一切)")
         st.caption("支持格式: kml, kmz, ovkml, ovkmz, gpx, plt, dxf, shp, ovbj, ovobj")
         
-        # 🔥🔥🔥 提示语增强 🔥🔥🔥
         uni_file = st.file_uploader("📂 点击上传或直接拖拽格式文件到此处", type=['kml', 'kmz', 'ovkml', 'ovkmz', 'gpx', 'plt', 'dxf', 'dwg', 'shp', 'ovbj', 'ovobj'])
         
         if uni_file:
@@ -551,16 +584,15 @@ elif st.session_state.user_role == 'user':
                             st.download_button("📥 下载 KMZ", f, "universal_output.kmz", type="primary")
                     else: st.error("生成失败")
             else:
-                st.error("❌ 解析失败或文件中没有提取到有效坐标。")
+                st.error("❌ 解析失败，该文件可能采用了高级压缩或非标准编码，建议在源软件中导出为 KML 格式。")
 
-    # 模式 4: AI (拖拽增强)
+    # 模式 4: AI
     elif app_mode == "📸 AI图片识别":
         st.header("📸 AI 识别")
         if 'raw_img' not in st.session_state: st.session_state.raw_img = None
         if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
         if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
         
-        # 🔥🔥🔥 提示语增强 🔥🔥🔥
         img_file = st.file_uploader("📸 点击上传或直接拖拽图片到此处 (拍照/选图)", type=['png', 'jpg', 'jpeg'])
         if img_file:
             opened_img = Image.open(img_file)
