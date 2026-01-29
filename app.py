@@ -15,15 +15,15 @@ import csv
 
 # --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
-USER_PASSWORD = "2026"  # 普通用户密码
+# USER_PASSWORD = "2026"  <-- 普通用户密码已取消
 ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v32.0", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v32.2", page_icon="📲", layout="wide")
 
-# 🔥🔥🔥 CSS 样式 (保持完美状态) 🔥🔥🔥
+# 🔥🔥🔥 CSS 样式 (保持不变) 🔥🔥🔥
 st.markdown("""
     <style>
         footer {display: none !important;}
@@ -141,7 +141,7 @@ def to_wgs84(v1, v2, cm, swap):
 def generate_kmz(df, coord_mode, cm=0):
     kml = simplekml.Kml()
     valid_count = 0
-    # 保留智能列名匹配，增强鲁棒性
+    # 智能列名匹配
     keys_v1 = ["纬度/X", "纬度", "Latitude", "lat", "Lat", "X", "x", "LAT", "Lat(N)"]
     keys_v2 = ["经度/Y", "经度", "Longitude", "lon", "Lon", "Y", "y", "LON", "Lon(E)"]
     keys_id = ["编号", "ID", "id", "Name", "name", "No"]
@@ -223,7 +223,7 @@ if 'user_role' not in st.session_state:
 if 'login_mode' not in st.session_state:
     st.session_state.login_mode = 'select'
 
-# --- 1. 登录界面 (居中布局) ---
+# --- 1. 登录界面 (居中布局 + 免密直连) ---
 if st.session_state.user_role is None:
     logo_b64 = get_local_image_base64(LOGO_FILENAME)
     bg_style = f"background-image: url('{logo_b64}');" if logo_b64 else "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
@@ -241,32 +241,20 @@ if st.session_state.user_role is None:
         if st.session_state.login_mode == 'select':
             b_gap1, b_content, b_gap2 = st.columns([1, 3, 1])
             with b_content:
+                # 🔥🔥🔥 修改点：点击直接进入，不再跳转输入密码 🔥🔥🔥
                 if st.button("🚀 普通用户登录", type="primary", use_container_width=True):
-                    st.session_state.login_mode = 'user_input'
+                    st.session_state.user_role = 'user'
+                    log_event("Login", "User Auto-Login")
                     st.rerun()
+                
                 st.write("")
+                
+                # 管理员依然需要密码
                 if st.button("🛡️ 管理员登录", use_container_width=True):
                     st.session_state.login_mode = 'admin_input'
                     st.rerun()
 
-        elif st.session_state.login_mode == 'user_input':
-            st.caption("🔒 请输入普通用户密码")
-            with st.form("user_login_form"):
-                password = st.text_input("用户密码", type="password", label_visibility="collapsed")
-                submit = st.form_submit_button("解锁进入", type="primary", use_container_width=True)
-                if submit:
-                    if password == USER_PASSWORD:
-                        st.session_state.user_role = 'user'
-                        st.session_state.login_mode = 'select'
-                        log_event("Login", "User Access")
-                        st.toast("欢迎回来！")
-                        st.rerun()
-                    else: st.error("密码错误")
-            b_gap1, b_back, b_gap2 = st.columns([1, 3, 1])
-            with b_back:
-                if st.button("⬅️ 返回", use_container_width=True):
-                    st.session_state.login_mode = 'select'
-                    st.rerun()
+        # 普通用户的 user_input 状态代码已移除
 
         elif st.session_state.login_mode == 'admin_input':
             st.caption("🔒 请输入管理员密码")
@@ -318,29 +306,30 @@ elif st.session_state.user_role == 'user':
             st.session_state.user_role = None
             st.rerun() 
         st.divider()
-        # 🔥🔥🔥 恢复为3个选项 🔥🔥🔥
         app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别"], index=2)
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v32.0")
+    st.title("力力的坐标工具 v32.2")
     
     # 模式 1: 手动
     if app_mode == "🖐️ 手动输入":
         st.header("🖐️ 手动录入")
         c1, c2 = st.columns(2)
-        with c1: coord_mode = st.selectbox("坐标格式", ["Decimal", "DMS", "DDM", "CGCS2000"])
+        with c1: coord_mode_display = st.selectbox("坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"])
         with c2:
             cm = 0
-            if coord_mode == "CGCS2000":
+            if "CGCS2000" in coord_mode_display:
                 cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
                 cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+        
         if 'manual_df' not in st.session_state:
             st.session_state.manual_df = pd.DataFrame([{"编号": "T1", "纬度/X": "", "经度/Y": ""}, {"编号": "T2", "纬度/X": "", "经度/Y": ""}])
         edited_df = st.data_editor(st.session_state.manual_df, num_rows="dynamic", use_container_width=True)
         
         if st.button("🚀 生成 KMZ", type="primary"):
             log_event("Generate KMZ", "Manual")
-            kml, count = generate_kmz(edited_df, coord_mode, cm)
+            mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000"}
+            kml, count = generate_kmz(edited_df, mode_map[coord_mode_display], cm)
             if count > 0:
                 kml.save("manual.kmz")
                 with open("manual.kmz", "rb") as f: st.download_button("📥 下载文件", f, "manual.kmz", type="primary")
@@ -371,17 +360,18 @@ elif st.session_state.user_role == 'user':
                 
                 st.write("---")
                 c_set1, c_set2 = st.columns(2)
-                with c_set1: coord_mode = st.selectbox("坐标格式", ["Decimal", "DMS", "DDM", "CGCS2000"])
+                with c_set1: coord_mode_display = st.selectbox("坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"])
                 with c_set2:
                     cm = 0
-                    if coord_mode == "CGCS2000":
+                    if "CGCS2000" in coord_mode_display:
                         cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
                         cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
                 final_df = st.data_editor(proc_df, num_rows="dynamic", use_container_width=True)
                 
                 if st.button("🚀 生成 KMZ", type="primary"):
                     log_event("Generate KMZ", "Text Import")
-                    kml, count = generate_kmz(final_df, coord_mode, cm)
+                    mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000"}
+                    kml, count = generate_kmz(final_df, mode_map[coord_mode_display], cm)
                     if count > 0:
                         kml.save("text_import.kmz")
                         with open("text_import.kmz", "rb") as f: st.download_button("📥 下载文件", f, "text_import.kmz", type="primary")
