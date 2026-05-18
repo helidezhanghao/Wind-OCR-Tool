@@ -14,6 +14,10 @@ from datetime import datetime
 import csv
 import zipfile
 import xml.etree.ElementTree as ET
+import tempfile
+import shutil
+import geopandas as gpd
+import simplekml as _simplekml_mod
 
 # --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
@@ -299,6 +303,169 @@ def build_excel(points, output_format, cm=0):
     buf.seek(0)
     return buf, df
 
+LAND_TYPE_COLORS = [
+    simplekml.Color.changealpha('aa', simplekml.Color.red),
+    simplekml.Color.changealpha('aa', simplekml.Color.blue),
+    simplekml.Color.changealpha('aa', simplekml.Color.green),
+    simplekml.Color.changealpha('aa', simplekml.Color.yellow),
+    simplekml.Color.changealpha('aa', simplekml.Color.orange),
+    simplekml.Color.changealpha('aa', simplekml.Color.purple),
+    simplekml.Color.changealpha('aa', simplekml.Color.cyan),
+    simplekml.Color.changealpha('aa', simplekml.Color.magenta),
+    simplekml.Color.changealpha('aa', simplekml.Color.lime),
+    simplekml.Color.changealpha('aa', simplekml.Color.pink),
+    simplekml.Color.changealpha('aa', simplekml.Color.teal),
+    simplekml.Color.changealpha('aa', simplekml.Color.brown),
+    simplekml.Color.changealpha('aa', simplekml.Color.coral),
+    simplekml.Color.changealpha('aa', simplekml.Color.gold),
+]
+
+def find_land_type_col(gdf):
+    """自动识别地类名称字段"""
+    keywords = ['地类名称', '地类', 'DLMC', 'dlmc', 'LAND_TYPE', 'land_type', 'TYPENAME', 'NAME', 'name']
+    for col in gdf.columns:
+        if col in keywords:
+            return col
+    for col in gdf.columns:
+        for kw in ['地类', 'DLMC', 'dlmc', 'land', 'type']:
+            if kw.lower() in col.lower():
+                return col
+    return None
+
+def geom_to_kml_folder(folder, geom, name, style):
+    """将几何体写入KML folder"""
+    if geom is None or geom.is_empty:
+        return
+    gt = geom.geom_type
+    if gt == 'Polygon':
+        pol = folder.newpolygon(name=name)
+        pol.outerboundaryis = list(geom.exterior.coords)
+        pol.style = style
+    elif gt == 'MultiPolygon':
+        for i, part in enumerate(geom.geoms):
+            pol = folder.newpolygon(name=f"{name}_{i}")
+            pol.outerboundaryis = list(part.exterior.coords)
+            pol.style = style
+    elif gt == 'Point':
+        pnt = folder.newpoint(name=name)
+        pnt.coords = [(geom.x, geom.y)]
+        pnt.style = style
+    elif gt == 'MultiPoint':
+        for i, part in enumerate(geom.geoms):
+            pnt = folder.newpoint(name=f"{name}_{i}")
+            pnt.coords = [(part.x, part.y)]
+            pnt.style = style
+    elif gt == 'LineString':
+        ls = folder.newlinestring(name=name)
+        ls.coords = list(geom.coords)
+        ls.style = style
+    elif gt == 'MultiLineString':
+        for i, part in enumerate(geom.geoms):
+            ls = folder.newlinestring(name=f"{name}_{i}")
+            ls.coords = list(part.coords)
+            ls.style = style
+
+def classify_to_kmz_zip(uploaded_files, land_col_override=None):
+    """
+    读取上传的文件（支持KMZ/KML/Shapefile/GeoJSON等），
+    按地类名称分类，返回 (zip_bytes, 分类统计列表, 错误信息)
+    """
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        # 保存上传文件
+        file_names = []
+        for f in uploaded_files:
+            path = os.path.join(tmp_dir, f.name)
+            with open(path, 'wb') as out:
+                out.write(f.read())
+            file_names.append(f.name)
+
+        # 读取数据
+        gdf = None
+        shp_files = [n for n in file_names if n.lower().endswith('.shp')]
+        kmz_files = [n for n in file_names if n.lower().endswith(('.kmz', '.kml'))]
+        geojson_files = [n for n in file_names if n.lower().endswith(('.geojson', '.json'))]
+
+        if shp_files:
+            gdf = gpd.read_file(os.path.join(tmp_dir, shp_files[0]))
+        elif kmz_files:
+            path = os.path.join(tmp_dir, kmz_files[0])
+            try:
+                gdf = gpd.read_file(path, driver='KML')
+            except:
+                gdf = gpd.read_file(f"/{path}", driver='LIBKML')
+        elif geojson_files:
+            gdf = gpd.read_file(os.path.join(tmp_dir, geojson_files[0]))
+        else:
+            # 尝试读取任意文件
+            for fname in file_names:
+                try:
+                    gdf = gpd.read_file(os.path.join(tmp_dir, fname))
+                    break
+                except:
+                    continue
+
+        if gdf is None or len(gdf) == 0:
+            return None, [], "无法读取数据，请检查文件格式"
+
+        # 转WGS84
+        if gdf.crs is None:
+            return None, [], "文件缺少坐标系信息（.prj），无法处理"
+        if gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+
+        # 找地类字段
+        land_col = land_col_override if land_col_override else find_land_type_col(gdf)
+        if land_col is None:
+            return None, [], f"未找到地类名称字段，现有字段：{', '.join(gdf.columns.tolist())}"
+
+        categories = gdf[land_col].dropna().unique().tolist()
+        if not categories:
+            return None, [], "地类字段为空"
+
+        # 生成KMZ
+        kmz_dir = os.path.join(tmp_dir, 'kmz_out')
+        os.makedirs(kmz_dir, exist_ok=True)
+        result_stats = []
+
+        for i, cat in enumerate(categories):
+            subset = gdf[gdf[land_col] == cat]
+            if subset.empty:
+                continue
+
+            kml = simplekml.Kml(name=str(cat))
+            folder = kml.newfolder(name=str(cat))
+            color = LAND_TYPE_COLORS[i % len(LAND_TYPE_COLORS)]
+            style = simplekml.Style()
+            style.polystyle.color = color
+            style.polystyle.outline = 1
+            style.linestyle.color = simplekml.Color.white
+            style.linestyle.width = 0.5
+            style.iconstyle.color = color
+
+            count = 0
+            for _, row in subset.iterrows():
+                geom = row.geometry
+                geom_to_kml_folder(folder, geom, str(cat), style)
+                count += 1
+
+            safe = str(cat).replace('/', '_').replace('\\', '_').replace(' ', '_')
+            kml.savekmz(os.path.join(kmz_dir, f"{safe}.kmz"))
+            result_stats.append(f"{cat}（{count}个图斑）")
+
+        # 打包zip
+        zip_buf = BytesIO()
+        with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for fname in os.listdir(kmz_dir):
+                zf.write(os.path.join(kmz_dir, fname), fname)
+        zip_buf.seek(0)
+        return zip_buf, result_stats, None
+
+    except Exception as e:
+        return None, [], str(e)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
 def recognize_image_with_zhipu(image):
     try:
         client = ZhipuAI(api_key=ZHIPU_API_KEY)
@@ -407,7 +574,7 @@ elif st.session_state.user_role == 'user':
             st.session_state.user_role = None
             st.rerun() 
         st.divider()
-        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel"], index=2)
+        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel", "🗺️ 地类分类KMZ"], index=2)
         st.info("切换模式会清空当前数据")
 
     st.title("力力的坐标工具 v32.2")
@@ -565,3 +732,41 @@ elif st.session_state.user_role == 'user':
                     st.download_button("📥 下载 Excel", buf, file_name="坐标导出.xlsx",
                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                        type="primary")
+
+    # 模式 5: 地类分类KMZ
+    elif app_mode == "🗺️ 地类分类KMZ":
+        st.header("🗺️ 地类分类 KMZ")
+        st.caption("支持 Shapefile、KMZ、KML、GeoJSON 等格式，按地类名称自动分类，打包下载")
+
+        uploaded = st.file_uploader(
+            "上传文件（Shapefile需同时上传 .shp .dbf .shx .prj）",
+            type=['shp', 'dbf', 'shx', 'prj', 'cpg', 'kmz', 'kml', 'geojson', 'json'],
+            accept_multiple_files=True
+        )
+
+        if uploaded:
+            # 显示已上传文件列表
+            st.write("已上传：" + "、".join([f.name for f in uploaded]))
+
+            # 可选：手动指定地类字段
+            land_col_input = st.text_input("地类字段名（留空自动识别，如DLMC、地类名称）", value="")
+            land_col_override = land_col_input.strip() if land_col_input.strip() else None
+
+            if st.button("🚀 开始分类", type="primary"):
+                log_event("地类分类KMZ", "Start")
+                with st.spinner("正在处理，请稍候..."):
+                    zip_buf, stats, err = classify_to_kmz_zip(uploaded, land_col_override)
+
+                if err:
+                    st.error(f"处理失败：{err}")
+                else:
+                    st.success(f"分类完成，共 {len(stats)} 种地类：")
+                    for s in stats:
+                        st.write(f"  • {s}")
+                    st.download_button(
+                        "📥 下载全部KMZ（zip）",
+                        zip_buf,
+                        file_name="地类分类KMZ.zip",
+                        mime="application/zip",
+                        type="primary"
+                    )
