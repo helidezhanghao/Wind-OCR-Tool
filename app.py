@@ -574,7 +574,7 @@ elif st.session_state.user_role == 'user':
             st.session_state.user_role = None
             st.rerun() 
         st.divider()
-        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel", "🗺️ 地类分类KMZ"], index=2)
+        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel"], index=2)
         st.info("切换模式会清空当前数据")
 
     st.title("力力的坐标工具 v32.2")
@@ -733,40 +733,3 @@ elif st.session_state.user_role == 'user':
                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                        type="primary")
 
-    # 模式 5: 地类分类KMZ
-    elif app_mode == "🗺️ 地类分类KMZ":
-        st.header("🗺️ 地类分类 KMZ")
-        st.caption("支持 Shapefile、KMZ、KML、GeoJSON 等格式，按地类名称自动分类，打包下载")
-
-        uploaded = st.file_uploader(
-            "上传文件（Shapefile需同时上传 .shp .dbf .shx .prj）",
-            type=['shp', 'dbf', 'shx', 'prj', 'cpg', 'kmz', 'kml', 'geojson', 'json'],
-            accept_multiple_files=True
-        )
-
-        if uploaded:
-            # 显示已上传文件列表
-            st.write("已上传：" + "、".join([f.name for f in uploaded]))
-
-            # 可选：手动指定地类字段
-            land_col_input = st.text_input("地类字段名（留空自动识别，如DLMC、地类名称）", value="")
-            land_col_override = land_col_input.strip() if land_col_input.strip() else None
-
-            if st.button("🚀 开始分类", type="primary"):
-                log_event("地类分类KMZ", "Start")
-                with st.spinner("正在处理，请稍候..."):
-                    zip_buf, stats, err = classify_to_kmz_zip(uploaded, land_col_override)
-
-                if err:
-                    st.error(f"处理失败：{err}")
-                else:
-                    st.success(f"分类完成，共 {len(stats)} 种地类：")
-                    for s in stats:
-                        st.write(f"  • {s}")
-                    st.download_button(
-                        "📥 下载全部KMZ（zip）",
-                        zip_buf,
-                        file_name="地类分类KMZ.zip",
-                        mime="application/zip",
-                        type="primary"
-                    )
