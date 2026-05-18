@@ -546,11 +546,11 @@ elif st.session_state.user_role == 'user':
                 c1, c2 = st.columns(2)
                 with c1:
                     output_format = st.selectbox("输出坐标格式", [
+                        "全格式(所有列)",
                         "WGS84 小数度",
                         "WGS84 度分秒(DMS)",
                         "WGS84 度.分(DDM)",
                         "CGCS2000 投影坐标",
-                        "全格式(所有列)",
                     ])
                 with c2:
                     cm = 0
