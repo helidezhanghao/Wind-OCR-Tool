@@ -278,7 +278,8 @@ def build_excel(points, output_format, cm=0):
             if x is not None:
                 rows.append({"编号": name, "X(北)": round(x, 3), "Y(东)": round(y, 3), "中央经线": cm})
         elif output_format == "全格式(所有列)":
-            x, y = wgs84_to_cgcs2000(lat, lon, cm) if cm != 0 else (None, None)
+            auto_cm = cm if cm != 0 else int(lon / 3) * 3 + 3
+            x, y = wgs84_to_cgcs2000(lat, lon, auto_cm)
             rows.append({
                 "编号": name,
                 "纬度_小数": round(lat, 8),
@@ -289,7 +290,7 @@ def build_excel(points, output_format, cm=0):
                 "经度_DDM": decimal_to_ddm(lon),
                 "X_CGCS2000": round(x, 3) if x else "",
                 "Y_CGCS2000": round(y, 3) if y else "",
-                "中央经线": cm if cm != 0 else "",
+                "中央经线": auto_cm,
             })
 
     df = pd.DataFrame(rows)
