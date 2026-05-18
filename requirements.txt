@@ -9,6 +9,4 @@
   streamlit-cropper
   sniffio
   httpx
-  geopandas
-  fiona
-  shapely
+
