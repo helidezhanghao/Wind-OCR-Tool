@@ -12,6 +12,8 @@ import base64
 from io import BytesIO
 from datetime import datetime
 import csv
+import zipfile
+import xml.etree.ElementTree as ET
 
 # --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
@@ -198,6 +200,104 @@ def image_to_base64(image):
     img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
     return f"data:image/jpeg;base64,{img_str}"
 
+def wgs84_to_cgcs2000(lat, lon, cm):
+    """WGS84转CGCS2000投影坐标"""
+    false_easting = 500000
+    crs_str = f"+proj=tmerc +lat_0=0 +lon_0={cm} +k=1 +x_0={false_easting} +y_0=0 +ellps=GRS80 +units=m +no_defs"
+    try:
+        t = Transformer.from_crs(CRS.from_epsg(4326), CRS.from_string(crs_str), always_xy=True)
+        x, y = t.transform(lon, lat)
+        return x, y
+    except:
+        return None, None
+
+def decimal_to_dms(deg):
+    """小数度转度分秒字符串"""
+    d = int(deg)
+    m = int((deg - d) * 60)
+    s = (deg - d - m / 60) * 3600
+    return f"{d}°{m}'{s:.4f}\""
+
+def decimal_to_ddm(deg):
+    """小数度转度.分格式"""
+    d = int(deg)
+    m = (deg - d) * 60
+    return f"{d}°{m:.6f}'"
+
+def parse_kmz(file_bytes):
+    """解析KMZ/KML文件，返回点位列表 [{name, lat, lon}]"""
+    points = []
+    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+
+    def parse_kml_text(kml_text):
+        try:
+            root = ET.fromstring(kml_text)
+        except ET.ParseError:
+            return
+        for pm in root.iter('{http://www.opengis.net/kml/2.2}Placemark'):
+            name_el = pm.find('{http://www.opengis.net/kml/2.2}name')
+            name = name_el.text.strip() if name_el is not None and name_el.text else ''
+            point_el = pm.find('.//{http://www.opengis.net/kml/2.2}Point')
+            if point_el is not None:
+                coords_el = point_el.find('{http://www.opengis.net/kml/2.2}coordinates')
+                if coords_el is not None and coords_el.text:
+                    parts = coords_el.text.strip().split(',')
+                    if len(parts) >= 2:
+                        try:
+                            lon, lat = float(parts[0]), float(parts[1])
+                            points.append({'name': name, 'lat': lat, 'lon': lon})
+                        except:
+                            pass
+
+    # 判断是KMZ还是KML
+    try:
+        with zipfile.ZipFile(BytesIO(file_bytes)) as z:
+            for fname in z.namelist():
+                if fname.endswith('.kml'):
+                    parse_kml_text(z.read(fname).decode('utf-8', errors='ignore'))
+    except zipfile.BadZipFile:
+        # 直接当KML处理
+        parse_kml_text(file_bytes.decode('utf-8', errors='ignore'))
+
+    return points
+
+def build_excel(points, output_format, cm=0):
+    """根据选择的格式生成Excel字节"""
+    rows = []
+    for p in points:
+        lat, lon = p['lat'], p['lon']
+        name = p['name']
+        if output_format == "WGS84 小数度":
+            rows.append({"编号": name, "纬度(°)": round(lat, 8), "经度(°)": round(lon, 8)})
+        elif output_format == "WGS84 度分秒(DMS)":
+            rows.append({"编号": name, "纬度": decimal_to_dms(lat), "经度": decimal_to_dms(lon)})
+        elif output_format == "WGS84 度.分(DDM)":
+            rows.append({"编号": name, "纬度": decimal_to_ddm(lat), "经度": decimal_to_ddm(lon)})
+        elif output_format == "CGCS2000 投影坐标":
+            x, y = wgs84_to_cgcs2000(lat, lon, cm)
+            if x is not None:
+                rows.append({"编号": name, "X(北)": round(x, 3), "Y(东)": round(y, 3), "中央经线": cm})
+        elif output_format == "全格式(所有列)":
+            x, y = wgs84_to_cgcs2000(lat, lon, cm) if cm != 0 else (None, None)
+            rows.append({
+                "编号": name,
+                "纬度_小数": round(lat, 8),
+                "经度_小数": round(lon, 8),
+                "纬度_DMS": decimal_to_dms(lat),
+                "经度_DMS": decimal_to_dms(lon),
+                "纬度_DDM": decimal_to_ddm(lat),
+                "经度_DDM": decimal_to_ddm(lon),
+                "X_CGCS2000": round(x, 3) if x else "",
+                "Y_CGCS2000": round(y, 3) if y else "",
+                "中央经线": cm if cm != 0 else "",
+            })
+
+    df = pd.DataFrame(rows)
+    buf = BytesIO()
+    df.to_excel(buf, index=False)
+    buf.seek(0)
+    return buf, df
+
 def recognize_image_with_zhipu(image):
     try:
         client = ZhipuAI(api_key=ZHIPU_API_KEY)
@@ -306,7 +406,7 @@ elif st.session_state.user_role == 'user':
             st.session_state.user_role = None
             st.rerun() 
         st.divider()
-        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别"], index=2)
+        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel"], index=2)
         st.info("切换模式会清空当前数据")
 
     st.title("力力的坐标工具 v32.2")
@@ -429,3 +529,38 @@ elif st.session_state.user_role == 'user':
                     kml.save("zhipu_result.kmz")
                     with open("zhipu_result.kmz", "rb") as f: st.download_button("📥 下载文件", f, "zhipu_result.kmz", type="primary")
                 else: st.error("无有效数据。")
+
+    # 模式 4: KMZ转Excel
+    elif app_mode == "📂 KMZ转Excel":
+        st.header("📂 KMZ / KML 转 Excel")
+        kmz_file = st.file_uploader("上传 KMZ 或 KML 文件", type=['kmz', 'kml'])
+        if kmz_file:
+            points = parse_kmz(kmz_file.read())
+            if not points:
+                st.error("未读取到点位数据，请确认文件包含点标注")
+            else:
+                st.success(f"共读取到 {len(points)} 个点位")
+                st.dataframe(pd.DataFrame(points).rename(columns={'name':'编号','lat':'纬度','lon':'经度'}), use_container_width=True)
+                st.divider()
+                c1, c2 = st.columns(2)
+                with c1:
+                    output_format = st.selectbox("输出坐标格式", [
+                        "WGS84 小数度",
+                        "WGS84 度分秒(DMS)",
+                        "WGS84 度.分(DDM)",
+                        "CGCS2000 投影坐标",
+                        "全格式(所有列)",
+                    ])
+                with c2:
+                    cm = 0
+                    if output_format in ["CGCS2000 投影坐标", "全格式(所有列)"]:
+                        cm_ops = {0:0,75:75,81:81,87:87,93:93,99:99,105:105,114:114,123:123}
+                        cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动推算" if x==0 else str(x))
+
+                if st.button("🚀 生成 Excel", type="primary"):
+                    log_event("KMZ to Excel", output_format)
+                    buf, df = build_excel(points, output_format, cm)
+                    st.dataframe(df, use_container_width=True)
+                    st.download_button("📥 下载 Excel", buf, file_name="坐标导出.xlsx",
+                                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                       type="primary")
