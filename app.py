@@ -18,6 +18,10 @@ import tempfile
 import shutil
 import geopandas as gpd
 import simplekml as _simplekml_mod
+import sqlite3
+import uuid
+from pathlib import Path
+from datetime import timedelta
 
 # --- 全局配置 ---
 ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
@@ -25,6 +29,10 @@ ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
 ADMIN_PASSWORD = "0521" # 管理员密码
 LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
+APP_DIR = Path(__file__).resolve().parent
+FEEDBACK_BASE_DIR = Path(os.getenv("FEEDBACK_STORAGE_DIR", str(APP_DIR / "feedback_storage"))).resolve()
+FEEDBACK_DB = FEEDBACK_BASE_DIR / "feedback.db"
+FEEDBACK_UPLOAD_DIR = FEEDBACK_BASE_DIR / "feedback_uploads"
 
 # 设置 layout="wide"
 st.set_page_config(page_title="力力的坐标工具 v32.2", page_icon="📲", layout="wide")
@@ -130,6 +138,117 @@ def get_logs():
     try: return pd.read_csv(LOG_FILE)
     except: return pd.DataFrame(columns=["Time", "Action", "Status"])
 
+def init_feedback_storage():
+    FEEDBACK_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(FEEDBACK_DB) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                submitted_by TEXT NOT NULL,
+                user_role TEXT NOT NULL,
+                app_mode TEXT NOT NULL,
+                rating INTEGER NOT NULL,
+                comment TEXT,
+                attachment_name TEXT,
+                attachment_path TEXT
+            )
+        """)
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(feedback)").fetchall()]
+        if "submitted_by" not in cols:
+            conn.execute("ALTER TABLE feedback ADD COLUMN submitted_by TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+def save_feedback(submitted_by, user_role, app_mode, rating, comment="", uploaded_file=None):
+    init_feedback_storage()
+    attachment_name = ""
+    attachment_path = ""
+
+    if uploaded_file is not None:
+        suffix = Path(uploaded_file.name).suffix or ".bin"
+        safe_filename = f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{suffix}"
+        target_path = FEEDBACK_UPLOAD_DIR / safe_filename
+        with open(target_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        attachment_name = uploaded_file.name
+        attachment_path = str(target_path)
+
+    with sqlite3.connect(FEEDBACK_DB) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO feedback (created_at, submitted_by, user_role, app_mode, rating, comment, attachment_name, attachment_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                str(submitted_by).strip(),
+                str(user_role),
+                str(app_mode),
+                int(rating),
+                str(comment or ""),
+                attachment_name,
+                attachment_path,
+            )
+        )
+        conn.commit()
+        return cur.lastrowid
+
+def get_feedback_df():
+    init_feedback_storage()
+    with sqlite3.connect(FEEDBACK_DB) as conn:
+        return pd.read_sql_query(
+            """
+            SELECT id, created_at, submitted_by, user_role, app_mode, rating, comment, attachment_name, attachment_path
+            FROM feedback
+            ORDER BY id DESC
+            """,
+            conn
+        )
+
+def delete_feedback(feedback_ids):
+    init_feedback_storage()
+    if not feedback_ids:
+        return 0
+
+    feedback_ids = [int(fid) for fid in feedback_ids]
+    with sqlite3.connect(FEEDBACK_DB) as conn:
+        placeholders = ",".join("?" for _ in feedback_ids)
+        rows = conn.execute(
+            f"SELECT id, attachment_path FROM feedback WHERE id IN ({placeholders})",
+            feedback_ids
+        ).fetchall()
+        conn.execute(
+            f"DELETE FROM feedback WHERE id IN ({placeholders})",
+            feedback_ids
+        )
+        conn.commit()
+
+    deleted = 0
+    for _, attachment_path in rows:
+        if attachment_path and os.path.exists(attachment_path):
+            try:
+                os.remove(attachment_path)
+            except OSError:
+                pass
+        deleted += 1
+    return deleted
+
+def build_feedback_zip():
+    df = get_feedback_df()
+    zip_buf = BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        export_df = df.drop(columns=["attachment_path"], errors="ignore")
+        zf.writestr("feedback.csv", export_df.to_csv(index=False).encode("utf-8-sig"))
+        for _, row in df.iterrows():
+            attachment_path = str(row.get("attachment_path", "") or "")
+            attachment_name = str(row.get("attachment_name", "") or "")
+            if attachment_path and os.path.exists(attachment_path):
+                safe_name = attachment_name or os.path.basename(attachment_path)
+                zf.write(attachment_path, arcname=f"attachments/{int(row['id'])}_{safe_name}")
+    zip_buf.seek(0)
+    return zip_buf
+
 def to_wgs84(v1, v2, cm, swap):
     x, y = (v2, v1) if swap else (v1, v2)
     if 10000000 < x < 100000000 and y < 10000000: x, y = y, x
@@ -206,14 +325,17 @@ def image_to_base64(image):
 
 def wgs84_to_cgcs2000(lat, lon, cm):
     """WGS84转CGCS2000投影坐标"""
+    final_cm = cm if cm != 0 else int(lon / 3) * 3 + 3
     false_easting = 500000
-    crs_str = f"+proj=tmerc +lat_0=0 +lon_0={cm} +k=1 +x_0={false_easting} +y_0=0 +ellps=GRS80 +units=m +no_defs"
+    crs_str = f"+proj=tmerc +lat_0=0 +lon_0={final_cm} +k=1 +x_0={false_easting} +y_0=0 +ellps=GRS80 +units=m +no_defs"
     try:
         t = Transformer.from_crs(CRS.from_epsg(4326), CRS.from_string(crs_str), always_xy=True)
-        x, y = t.transform(lon, lat)
-        return x, y
+        east, north = t.transform(lon, lat)
+        zone_no = int(final_cm / 3)
+        east_with_zone = zone_no * 1000000 + east
+        return north, east, east_with_zone, zone_no, final_cm
     except:
-        return None, None
+        return None, None, None, None, None
 
 def decimal_to_dms(deg):
     """小数度转度分秒字符串"""
@@ -227,6 +349,18 @@ def decimal_to_ddm(deg):
     d = int(deg)
     m = (deg - d) * 60
     return f"{d}°{m:.6f}'"
+
+def get_3deg_zone_info(lon, zone_override=0, cm_override=0):
+    """按3度带获取带号和中央经线；可手动覆盖"""
+    if zone_override:
+        zone_no = int(zone_override)
+        return zone_no, zone_no * 3
+    if cm_override:
+        final_cm = int(cm_override)
+        return int(final_cm / 3), final_cm
+
+    zone_no = int(lon / 3) + 1
+    return zone_no, zone_no * 3
 
 def parse_kmz(file_bytes):
     """解析KMZ/KML文件，返回点位列表 [{name, lat, lon}]"""
@@ -265,7 +399,7 @@ def parse_kmz(file_bytes):
 
     return points
 
-def build_excel(points, output_format, cm=0):
+def build_excel(points, output_format, cm=0, zone_override=0):
     """根据选择的格式生成Excel字节"""
     rows = []
     for p in points:
@@ -278,12 +412,20 @@ def build_excel(points, output_format, cm=0):
         elif output_format == "WGS84 度.分(DDM)":
             rows.append({"编号": name, "纬度": decimal_to_ddm(lat), "经度": decimal_to_ddm(lon)})
         elif output_format == "CGCS2000 投影坐标":
-            x, y = wgs84_to_cgcs2000(lat, lon, cm)
-            if x is not None:
-                rows.append({"编号": name, "X(北)": round(x, 3), "Y(东)": round(y, 3), "中央经线": cm})
+            use_zone_no, use_cm = get_3deg_zone_info(lon, zone_override, cm)
+            north, east, east_with_zone, zone_no, final_cm = wgs84_to_cgcs2000(lat, lon, use_cm)
+            if north is not None:
+                rows.append({
+                    "编号": name,
+                    "X(北)": round(north, 3),
+                    "Y(东,带号)": round(east_with_zone, 3),
+                    "Y(东,不带号)": round(east, 3),
+                    "带号": use_zone_no,
+                    "中央经线": use_cm
+                })
         elif output_format == "全格式(所有列)":
-            auto_cm = cm if cm != 0 else int(lon / 3) * 3 + 3
-            x, y = wgs84_to_cgcs2000(lat, lon, auto_cm)
+            use_zone_no, use_cm = get_3deg_zone_info(lon, zone_override, cm)
+            north, east, east_with_zone, zone_no, final_cm = wgs84_to_cgcs2000(lat, lon, use_cm)
             rows.append({
                 "编号": name,
                 "纬度_小数": round(lat, 8),
@@ -292,9 +434,11 @@ def build_excel(points, output_format, cm=0):
                 "经度_DMS": decimal_to_dms(lon),
                 "纬度_DDM": decimal_to_ddm(lat),
                 "经度_DDM": decimal_to_ddm(lon),
-                "X_CGCS2000": round(x, 3) if x else "",
-                "Y_CGCS2000": round(y, 3) if y else "",
-                "中央经线": auto_cm,
+                "X_CGCS2000(北)": round(north, 3) if north is not None else "",
+                "Y_CGCS2000(东,带号)": round(east_with_zone, 3) if east_with_zone is not None else "",
+                "Y_CGCS2000(东,不带号)": round(east, 3) if east is not None else "",
+                "带号": use_zone_no,
+                "中央经线": use_cm,
             })
 
     df = pd.DataFrame(rows)
@@ -565,6 +709,148 @@ elif st.session_state.user_role == 'admin':
     st.dataframe(df_logs.sort_index(ascending=False), use_container_width=True)
     st.download_button("📥 导出 CSV", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
 
+    st.divider()
+    st.subheader("📝 用户反馈")
+    feedback_df = get_feedback_df()
+    cfb1, cfb2, cfb3 = st.columns(3)
+    with cfb1:
+        st.metric("反馈总数", len(feedback_df))
+    with cfb2:
+        avg_rating = round(feedback_df["rating"].mean(), 2) if not feedback_df.empty else 0
+        st.metric("平均评分", avg_rating)
+    with cfb3:
+        with_attachments = int(feedback_df["attachment_name"].fillna("").astype(str).ne("").sum()) if not feedback_df.empty else 0
+        st.metric("带附件反馈", with_attachments)
+
+    feedback_zip = build_feedback_zip()
+    st.download_button(
+        "📦 一键打包下载全部反馈",
+        feedback_zip,
+        file_name=f"feedback_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+        mime="application/zip",
+        type="primary"
+    )
+
+    if feedback_df.empty:
+        st.info("暂时还没有用户反馈。")
+    else:
+        st.markdown("#### 筛选")
+        sf1, sf2, sf3 = st.columns(3)
+        with sf1:
+            rating_filter = st.multiselect("按评分筛选", options=[1, 2, 3, 4, 5], default=[1, 2, 3, 4, 5])
+        with sf2:
+            date_mode = st.selectbox("按时间筛选", ["全部", "近7天", "近30天", "自定义"])
+        with sf3:
+            name_keyword = st.text_input("按姓名/留言搜索")
+
+        filtered_df = feedback_df.copy()
+        if rating_filter:
+            filtered_df = filtered_df[filtered_df["rating"].isin(rating_filter)]
+        if date_mode != "全部":
+            filtered_df["created_at_dt"] = pd.to_datetime(filtered_df["created_at"], errors="coerce")
+            now = datetime.now()
+            if date_mode == "近7天":
+                filtered_df = filtered_df[filtered_df["created_at_dt"] >= now - timedelta(days=7)]
+            elif date_mode == "近30天":
+                filtered_df = filtered_df[filtered_df["created_at_dt"] >= now - timedelta(days=30)]
+            elif date_mode == "自定义":
+                d1, d2 = st.columns(2)
+                with d1:
+                    start_date = st.date_input("开始日期", value=(now - timedelta(days=30)).date(), key="fb_start_date")
+                with d2:
+                    end_date = st.date_input("结束日期", value=now.date(), key="fb_end_date")
+                filtered_df = filtered_df[
+                    (filtered_df["created_at_dt"] >= pd.Timestamp(start_date)) &
+                    (filtered_df["created_at_dt"] < pd.Timestamp(end_date) + pd.Timedelta(days=1))
+                ]
+            filtered_df = filtered_df.drop(columns=["created_at_dt"], errors="ignore")
+        if name_keyword.strip():
+            keyword = name_keyword.strip()
+            filtered_df = filtered_df[
+                filtered_df["submitted_by"].astype(str).str.contains(keyword, case=False, na=False) |
+                filtered_df["comment"].astype(str).str.contains(keyword, case=False, na=False)
+            ]
+
+        show_df = feedback_df.copy()
+        show_df = filtered_df.copy()
+        show_df["删除"] = False
+        show_df = show_df.rename(columns={
+            "id": "ID",
+            "created_at": "提交时间",
+            "submitted_by": "姓名",
+            "user_role": "角色",
+            "app_mode": "功能模块",
+            "rating": "评分",
+            "comment": "意见",
+            "attachment_name": "附件名",
+            "attachment_path": "附件路径",
+        })
+        edited_feedback_df = st.data_editor(
+            show_df[["删除", "ID", "提交时间", "姓名", "角色", "功能模块", "评分", "意见", "附件名", "附件路径"]],
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "删除": st.column_config.CheckboxColumn("删除"),
+                "ID": st.column_config.NumberColumn("ID", disabled=True),
+                "提交时间": st.column_config.TextColumn("提交时间", disabled=True),
+                "姓名": st.column_config.TextColumn("姓名", disabled=True),
+                "角色": st.column_config.TextColumn("角色", disabled=True),
+                "功能模块": st.column_config.TextColumn("功能模块", disabled=True),
+                "评分": st.column_config.NumberColumn("评分", disabled=True),
+                "意见": st.column_config.TextColumn("意见", disabled=True),
+                "附件名": st.column_config.TextColumn("附件名", disabled=True),
+                "附件路径": st.column_config.TextColumn("附件路径", disabled=True),
+            }
+        )
+        if st.button("🗑️ 删除勾选反馈", use_container_width=True):
+            selected_ids = edited_feedback_df.loc[edited_feedback_df["删除"] == True, "ID"].tolist()
+            deleted = delete_feedback(selected_ids)
+            if deleted:
+                st.success(f"已删除 {deleted} 条反馈。")
+                st.rerun()
+            else:
+                st.warning("请先勾选要删除的反馈。")
+
+        st.markdown("#### 附件预览")
+        preview_candidates = filtered_df[filtered_df["attachment_path"].fillna("").astype(str) != ""]
+        if preview_candidates.empty:
+            st.caption("当前筛选结果中没有可预览附件。")
+        else:
+            preview_map = {
+                f"{int(row['id'])} | {row['submitted_by']} | {row['attachment_name']}": row
+                for _, row in preview_candidates.iterrows()
+            }
+            selected_preview_key = st.selectbox("选择一条带附件的反馈", list(preview_map.keys()))
+            preview_row = preview_map[selected_preview_key]
+            attachment_path = str(preview_row["attachment_path"])
+            attachment_name = str(preview_row["attachment_name"])
+            if os.path.exists(attachment_path):
+                suffix = Path(attachment_name).suffix.lower()
+                st.write(f"反馈人：{preview_row['submitted_by']}  |  评分：{preview_row['rating']}")
+                st.write(f"留言：{preview_row['comment']}")
+                if suffix in [".png", ".jpg", ".jpeg"]:
+                    st.image(attachment_path, caption=attachment_name, use_container_width=True)
+                elif suffix == ".pdf":
+                    with open(attachment_path, "rb") as f:
+                        pdf_bytes = f.read()
+                    st.download_button(
+                        "📥 下载该 PDF 附件",
+                        pdf_bytes,
+                        file_name=attachment_name,
+                        mime="application/pdf"
+                    )
+                else:
+                    with open(attachment_path, "rb") as f:
+                        raw_bytes = f.read()
+                    st.download_button(
+                        "📥 下载该附件",
+                        raw_bytes,
+                        file_name=attachment_name,
+                        mime="application/octet-stream"
+                    )
+            else:
+                st.warning("附件文件不存在，可能已被删除或迁移。")
+
 
 # --- 3. 普通用户界面 ---
 elif st.session_state.user_role == 'user':
@@ -576,6 +862,32 @@ elif st.session_state.user_role == 'user':
         st.divider()
         app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel"], index=2)
         st.info("切换模式会清空当前数据")
+        st.divider()
+        st.markdown("### 📝 反馈意见")
+        feedback_name = st.text_input("你的姓名", key="feedback_name")
+        feedback_rating = st.slider("工具评分", min_value=1, max_value=5, value=5, step=1, key="feedback_rating")
+        feedback_comment = st.text_area("留言 / 修改建议", height=120, key="feedback_comment")
+        feedback_file = st.file_uploader(
+            "上传附图（可选）",
+            type=['png', 'jpg', 'jpeg', 'pdf'],
+            key="feedback_file"
+        )
+        if st.button("📨 提交反馈", use_container_width=True):
+            if not str(feedback_name).strip():
+                st.error("请先填写姓名。")
+            elif not str(feedback_comment).strip() and feedback_file is None:
+                st.error("请至少填写留言或上传一张附图。")
+            else:
+                feedback_id = save_feedback(
+                    submitted_by=feedback_name,
+                    user_role="user",
+                    app_mode=app_mode,
+                    rating=feedback_rating,
+                    comment=feedback_comment,
+                    uploaded_file=feedback_file
+                )
+                log_event("Submit Feedback", f"ID={feedback_id}")
+                st.success("反馈已提交，我这边可以在管理员后台查看。")
 
     st.title("力力的坐标工具 v32.2")
     
@@ -721,15 +1033,20 @@ elif st.session_state.user_role == 'user':
                     ])
                 with c2:
                     cm = 0
+                    zone_override = 0
                     if output_format in ["CGCS2000 投影坐标", "全格式(所有列)"]:
-                        cm_ops = {0:0,75:75,81:81,87:87,93:93,99:99,105:105,114:114,123:123}
-                        cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动推算" if x==0 else str(x))
+                        zone_mode = st.selectbox("度带号模式", ["自动判定", "手动指定"])
+                        if zone_mode == "手动指定":
+                            zone_override = st.selectbox("3度带号", list(range(25, 46)))
+                            cm = zone_override * 3
+                            st.caption(f"当前中央经线：{cm}")
+                        else:
+                            st.caption("将根据点位经度自动判定3度带号和中央经线")
 
                 if st.button("🚀 生成 Excel", type="primary"):
                     log_event("KMZ to Excel", output_format)
-                    buf, df = build_excel(points, output_format, cm)
+                    buf, df = build_excel(points, output_format, cm, zone_override)
                     st.dataframe(df, use_container_width=True)
                     st.download_button("📥 下载 Excel", buf, file_name="坐标导出.xlsx",
                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                        type="primary")
-
