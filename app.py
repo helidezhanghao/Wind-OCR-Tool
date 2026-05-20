@@ -815,6 +815,23 @@ elif st.session_state.user_role == 'admin':
             else:
                 st.warning("请先勾选要删除的反馈。")
 
+        st.markdown("#### 留言详情")
+        detail_map = {
+            f"{int(row['id'])} | {row['submitted_by']} | {row['created_at']}": row
+            for _, row in filtered_df.iterrows()
+        }
+        selected_detail_key = st.selectbox("选择一条反馈查看详细内容", list(detail_map.keys()))
+        detail_row = detail_map[selected_detail_key]
+        d1, d2, d3 = st.columns(3)
+        with d1:
+            st.write(f"姓名：{detail_row['submitted_by']}")
+        with d2:
+            st.write(f"评分：{detail_row['rating']}")
+        with d3:
+            st.write(f"模块：{detail_row['app_mode']}")
+        st.write(f"提交时间：{detail_row['created_at']}")
+        st.text_area("留言内容", value=str(detail_row['comment'] or ""), height=180, disabled=True, key=f"detail_comment_{int(detail_row['id'])}")
+
         st.markdown("#### 附件预览")
         preview_candidates = filtered_df[filtered_df["attachment_path"].fillna("").astype(str) != ""]
         if preview_candidates.empty:
@@ -864,20 +881,12 @@ elif st.session_state.user_role == 'user':
             st.session_state.user_role = None
             st.rerun() 
         st.divider()
-        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel"], index=2)
+        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel", "📝 意见反馈"], index=2)
         st.info("切换模式会清空当前数据")
-        st.divider()
-        if st.button("📝 意见反馈", use_container_width=True):
-            st.session_state.user_page = "feedback"
-        if st.button("🛠️ 返回工具页", use_container_width=True):
-            st.session_state.user_page = "tools"
 
     st.title("力力的坐标工具 v32.2")
 
-    if 'user_page' not in st.session_state:
-        st.session_state.user_page = "tools"
-
-    if st.session_state.user_page == "feedback":
+    if app_mode == "📝 意见反馈":
         st.header("📝 意见反馈")
         st.caption("请填写姓名、评分、意见内容；如有需要可上传附图。")
 
