@@ -417,9 +417,11 @@ def build_excel(points, output_format, cm=0, zone_override=0):
             if north is not None:
                 rows.append({
                     "编号": name,
-                    "X(北)": round(north, 3),
-                    "Y(东,带号)": round(east_with_zone, 3),
-                    "Y(东,不带号)": round(east, 3),
+                    "东坐标E(带号)": round(east_with_zone, 3),
+                    "东坐标E(不带号)": round(east, 3),
+                    "北坐标N": round(north, 3),
+                    "X(东)": round(east_with_zone, 3),
+                    "Y(北)": round(north, 3),
                     "带号": use_zone_no,
                     "中央经线": use_cm
                 })
@@ -434,9 +436,11 @@ def build_excel(points, output_format, cm=0, zone_override=0):
                 "经度_DMS": decimal_to_dms(lon),
                 "纬度_DDM": decimal_to_ddm(lat),
                 "经度_DDM": decimal_to_ddm(lon),
-                "X_CGCS2000(北)": round(north, 3) if north is not None else "",
-                "Y_CGCS2000(东,带号)": round(east_with_zone, 3) if east_with_zone is not None else "",
-                "Y_CGCS2000(东,不带号)": round(east, 3) if east is not None else "",
+                "东坐标E_CGCS2000(带号)": round(east_with_zone, 3) if east_with_zone is not None else "",
+                "东坐标E_CGCS2000(不带号)": round(east, 3) if east is not None else "",
+                "北坐标N_CGCS2000": round(north, 3) if north is not None else "",
+                "X_CGCS2000(东)": round(east_with_zone, 3) if east_with_zone is not None else "",
+                "Y_CGCS2000(北)": round(north, 3) if north is not None else "",
                 "带号": use_zone_no,
                 "中央经线": use_cm,
             })
