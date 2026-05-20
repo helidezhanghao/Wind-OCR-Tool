@@ -867,16 +867,32 @@ elif st.session_state.user_role == 'user':
         app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel"], index=2)
         st.info("切换模式会清空当前数据")
         st.divider()
-        st.markdown("### 📝 反馈意见")
-        feedback_name = st.text_input("你的姓名", key="feedback_name")
-        feedback_rating = st.slider("工具评分", min_value=1, max_value=5, value=5, step=1, key="feedback_rating")
-        feedback_comment = st.text_area("留言 / 修改建议", height=120, key="feedback_comment")
-        feedback_file = st.file_uploader(
-            "上传附图（可选）",
-            type=['png', 'jpg', 'jpeg', 'pdf'],
-            key="feedback_file"
-        )
-        if st.button("📨 提交反馈", use_container_width=True):
+        if st.button("📝 意见反馈", use_container_width=True):
+            st.session_state.user_page = "feedback"
+        if st.button("🛠️ 返回工具页", use_container_width=True):
+            st.session_state.user_page = "tools"
+
+    st.title("力力的坐标工具 v32.2")
+
+    if 'user_page' not in st.session_state:
+        st.session_state.user_page = "tools"
+
+    if st.session_state.user_page == "feedback":
+        st.header("📝 意见反馈")
+        st.caption("请填写姓名、评分、意见内容；如有需要可上传附图。")
+
+        with st.form("feedback_form"):
+            feedback_name = st.text_input("你的姓名", key="feedback_name_page")
+            feedback_rating = st.slider("工具评分", min_value=1, max_value=5, value=5, step=1, key="feedback_rating_page")
+            feedback_comment = st.text_area("留言 / 修改建议", height=180, key="feedback_comment_page")
+            feedback_file = st.file_uploader(
+                "上传附图（可选）",
+                type=['png', 'jpg', 'jpeg', 'pdf'],
+                key="feedback_file_page"
+            )
+            submit_feedback = st.form_submit_button("📨 提交反馈", type="primary")
+
+        if submit_feedback:
             if not str(feedback_name).strip():
                 st.error("请先填写姓名。")
             elif not str(feedback_comment).strip() and feedback_file is None:
@@ -892,8 +908,7 @@ elif st.session_state.user_role == 'user':
                 )
                 log_event("Submit Feedback", f"ID={feedback_id}")
                 st.success("反馈已提交，我这边可以在管理员后台查看。")
-
-    st.title("力力的坐标工具 v32.2")
+        st.stop()
     
     # 模式 1: 手动
     if app_mode == "🖐️ 手动输入":
