@@ -1,12 +1,8 @@
- streamlit                                                                               
-  simplekml                                                 
-  pyproj
-  Pillow                                                                                  
-  pandas
-  numpy                                                                                   
-  zhipuai>=2.0.0                                            
-  openpyxl
-  streamlit-cropper
-  sniffio
-  httpx
-
+streamlit
+simplekml
+pyproj
+Pillow
+pandas
+numpy
+zhipuai
+geopandas
