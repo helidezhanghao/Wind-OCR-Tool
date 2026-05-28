@@ -1,8 +1,12 @@
-streamlit
-simplekml
-pyproj
-Pillow
-pandas
-numpy
-zhipuai
-geopandas
+  streamlit
+  simplekml
+  pyproj
+  Pillow
+  pandas
+  numpy
+  zhipuai
+  geopandas
+  sniffio
+  httpx
+  anyio
+  pydantic
