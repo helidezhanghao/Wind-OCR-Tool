@@ -35,7 +35,7 @@ FEEDBACK_DB = FEEDBACK_BASE_DIR / "feedback.db"
 FEEDBACK_UPLOAD_DIR = FEEDBACK_BASE_DIR / "feedback_uploads"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v32.2", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v33.0", page_icon="📲", layout="wide")
 
 # 🔥🔥🔥 CSS 样式 (保持不变) 🔥🔥🔥
 st.markdown("""
@@ -43,7 +43,7 @@ st.markdown("""
         footer {display: none !important;}
         #MainMenu {display: none !important;}
         .stDeployButton {display: none !important;}
-        
+
         .block-container {
             padding-top: 2rem !important;
             padding-bottom: 3rem !important;
@@ -56,7 +56,7 @@ st.markdown("""
             height: auto;
             margin-bottom: 20px;
         }
-        
+
         .login-box {
             background: #ffffff;
             padding: 0;
@@ -74,15 +74,15 @@ st.markdown("""
             width: 100%;
             height: 200px;
             background-size: cover;
-            background-position: center center !important; 
+            background-position: center center !important;
             background-repeat: no-repeat;
         }
 
         .login-content-wrapper {
             padding: 2rem 2.5rem 2.5rem 2.5rem;
         }
-        
-        .login-title { 
+
+        .login-title {
             font-size: 1.5rem; font-weight: 700; color: #333;
             margin-bottom: 1.5rem;
         }
@@ -102,7 +102,7 @@ st.markdown("""
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
             margin-bottom: 10px;
         }
-        
+
         @media (max-width: 768px) {
             [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 10px; }
             [data-testid="stHorizontalBlock"] > div { min-width: 100% !important; }
@@ -116,7 +116,7 @@ def get_local_image_base64(path):
     try:
         with open(path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-            return f"data:image/png;base64,{encoded_string}" 
+            return f"data:image/png;base64,{encoded_string}"
     except FileNotFoundError:
         return None
 
@@ -263,7 +263,7 @@ def to_wgs84(v1, v2, cm, swap):
         return lat, lon
     except: return None, "Error"
 
-def generate_kmz(df, coord_mode, cm=0):
+def generate_kmz(df, coord_mode, cm=0, utm_zone=0, utm_hemi='N'):
     kml = simplekml.Kml()
     valid_count = 0
     # 智能列名匹配
@@ -278,13 +278,13 @@ def generate_kmz(df, coord_mode, cm=0):
                 if k in row:
                     raw_v1 = row[k]
                     break
-            
+
             raw_v2 = 0
             for k in keys_v2:
                 if k in row:
                     raw_v2 = row[k]
                     break
-            
+
             name = f"P{i+1}"
             for k in keys_id:
                 if k in row:
@@ -302,14 +302,24 @@ def generate_kmz(df, coord_mode, cm=0):
 
             v1 = clean_ai_val(raw_v1)
             v2 = clean_ai_val(raw_v2)
-            
+
             lat, lon = 0, 0
-            if coord_mode != "CGCS2000": lat, lon = (v1, v2) if v1 < v2 else (v2, v1)
-            else:
+            if coord_mode == "CGCS2000":
                 res, msg = to_wgs84(v1, v2, cm, False)
                 if res: lat, lon = res, msg
                 else: continue
-            
+            elif coord_mode == "UTM":
+                # v1/v2 为投影坐标(北坐标/东坐标，任意顺序)，按数值大小自动判定
+                easting, northing = v2, v1
+                if northing < easting:
+                    easting, northing = northing, easting
+                use_zone = utm_zone if utm_zone else 50
+                res_lat, res_lon = utm_to_wgs84(easting, northing, use_zone, utm_hemi)
+                if res_lat is not None: lat, lon = res_lat, res_lon
+                else: continue
+            else:
+                lat, lon = (v1, v2) if v1 < v2 else (v2, v1)
+
             if abs(lat) > 0.1 and abs(lon) > 0.1:
                 kml.newpoint(name=name, coords=[(lon, lat)])
                 valid_count += 1
@@ -336,6 +346,37 @@ def wgs84_to_cgcs2000(lat, lon, cm):
         return north, east, east_with_zone, zone_no, final_cm
     except:
         return None, None, None, None, None
+
+def get_utm_zone(lon):
+    """根据经度返回UTM 6度带号(1-60)"""
+    return max(1, min(60, int((lon + 180) / 6) + 1))
+
+def wgs84_to_utm(lat, lon, zone_override=0, hemi_override=None):
+    """WGS84经纬度 -> UTM投影坐标 (WGS84椭球, 6度带, k0=0.9996)
+    返回: (东坐标E, 北坐标N, 带号, 半球, 中央经线, EPSG)"""
+    zone = int(zone_override) if zone_override else get_utm_zone(lon)
+    zone = max(1, min(60, zone))
+    hemi = hemi_override if hemi_override in ('N', 'S') else ('N' if lat >= 0 else 'S')
+    epsg = (32600 if hemi == 'N' else 32700) + zone
+    lon0 = zone * 6 - 183  # 该带中央经线
+    try:
+        t = Transformer.from_crs(CRS.from_epsg(4326), CRS.from_epsg(epsg), always_xy=True)
+        east, north = t.transform(lon, lat)
+        return east, north, zone, hemi, lon0, epsg
+    except:
+        return None, None, None, None, None, None
+
+def utm_to_wgs84(easting, northing, zone, hemi='N'):
+    """UTM投影坐标 -> WGS84经纬度，返回 (lat, lon)"""
+    try:
+        zone = max(1, min(60, int(zone)))
+        hemi = hemi if hemi in ('N', 'S') else 'N'
+        epsg = (32600 if hemi == 'N' else 32700) + zone
+        t = Transformer.from_crs(CRS.from_epsg(epsg), CRS.from_epsg(4326), always_xy=True)
+        lon, lat = t.transform(easting, northing)
+        return lat, lon
+    except:
+        return None, None
 
 def decimal_to_dms(deg):
     """小数度转度分秒字符串"""
@@ -399,7 +440,7 @@ def parse_kmz(file_bytes):
 
     return points
 
-def build_excel(points, output_format, cm=0, zone_override=0):
+def build_excel(points, output_format, cm=0, zone_override=0, utm_zone_override=0, utm_hemi=None):
     """根据选择的格式生成Excel字节"""
     rows = []
     for p in points:
@@ -425,9 +466,26 @@ def build_excel(points, output_format, cm=0, zone_override=0):
                     "带号": use_zone_no,
                     "中央经线": use_cm
                 })
+        elif output_format == "UTM 投影坐标":
+            uz = utm_zone_override if utm_zone_override else get_utm_zone(lon)
+            uh = utm_hemi if utm_hemi in ('N', 'S') else ('N' if lat >= 0 else 'S')
+            u_east, u_north, u_zone, u_hemi, u_lon0, u_epsg = wgs84_to_utm(lat, lon, uz, uh)
+            if u_east is not None:
+                rows.append({
+                    "编号": name,
+                    "UTM带号(6°)": u_zone,
+                    "半球": u_hemi,
+                    "东坐标E(m)": round(u_east, 3),
+                    "北坐标N(m)": round(u_north, 3),
+                    "中央经线": u_lon0,
+                    "EPSG": u_epsg,
+                })
         elif output_format == "全格式(所有列)":
             use_zone_no, use_cm = get_3deg_zone_info(lon, zone_override, cm)
             north, east, east_with_zone, zone_no, final_cm = wgs84_to_cgcs2000(lat, lon, use_cm)
+            uz = utm_zone_override if utm_zone_override else get_utm_zone(lon)
+            uh = utm_hemi if utm_hemi in ('N', 'S') else ('N' if lat >= 0 else 'S')
+            u_east, u_north, u_zone, u_hemi, u_lon0, u_epsg = wgs84_to_utm(lat, lon, uz, uh)
             rows.append({
                 "编号": name,
                 "纬度_小数": round(lat, 8),
@@ -443,6 +501,12 @@ def build_excel(points, output_format, cm=0, zone_override=0):
                 "Y_CGCS2000(北)": round(north, 3) if north is not None else "",
                 "带号": use_zone_no,
                 "中央经线": use_cm,
+                "UTM带号(6°)": u_zone if u_zone is not None else "",
+                "UTM半球": u_hemi if u_hemi is not None else "",
+                "东坐标E_UTM(m)": round(u_east, 3) if u_east is not None else "",
+                "北坐标N_UTM(m)": round(u_north, 3) if u_north is not None else "",
+                "UTM中央经线": u_lon0 if u_lon0 is not None else "",
+                "UTM_EPSG": u_epsg if u_epsg is not None else "",
             })
 
     df = pd.DataFrame(rows)
@@ -635,7 +699,7 @@ def recognize_image_with_zhipu(image):
 # ================= 🚀 主程序逻辑 =================
 
 if 'user_role' not in st.session_state:
-    st.session_state.user_role = None 
+    st.session_state.user_role = None
 if 'login_mode' not in st.session_state:
     st.session_state.login_mode = 'select'
 
@@ -653,7 +717,7 @@ if st.session_state.user_role is None:
                     <div class='login-content-wrapper'>
                         <div class='login-title'>力力坐标工具</div>
         """, unsafe_allow_html=True)
-        
+
         if st.session_state.login_mode == 'select':
             b_gap1, b_content, b_gap2 = st.columns([1, 3, 1])
             with b_content:
@@ -662,9 +726,9 @@ if st.session_state.user_role is None:
                     st.session_state.user_role = 'user'
                     log_event("Login", "User Auto-Login")
                     st.rerun()
-                
+
                 st.write("")
-                
+
                 # 管理员依然需要密码
                 if st.button("🛡️ 管理员登录", use_container_width=True):
                     st.session_state.login_mode = 'admin_input'
@@ -875,16 +939,16 @@ elif st.session_state.user_role == 'admin':
 
 # --- 3. 普通用户界面 ---
 elif st.session_state.user_role == 'user':
-    
+
     with st.sidebar:
         if st.button("🔒 退出登录"):
             st.session_state.user_role = None
-            st.rerun() 
+            st.rerun()
         st.divider()
         app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel", "📝 意见反馈"], index=2)
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v32.2")
+    st.title("力力的坐标工具 v33.0")
 
     if app_mode == "📝 意见反馈":
         st.header("📝 意见反馈")
@@ -918,26 +982,31 @@ elif st.session_state.user_role == 'user':
                 log_event("Submit Feedback", f"ID={feedback_id}")
                 st.success("反馈已提交，我这边可以在管理员后台查看。")
         st.stop()
-    
+
     # 模式 1: 手动
     if app_mode == "🖐️ 手动输入":
         st.header("🖐️ 手动录入")
         c1, c2 = st.columns(2)
-        with c1: coord_mode_display = st.selectbox("坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"])
+        with c1: coord_mode_display = st.selectbox("坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)", "UTM (投影)"])
         with c2:
             cm = 0
+            utm_zone = 0
+            utm_hemi = 'N'
             if "CGCS2000" in coord_mode_display:
                 cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
                 cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
-        
+            elif "UTM" in coord_mode_display:
+                utm_zone = st.selectbox("UTM 带号(6°)", list(range(1, 61)), index=49)
+                utm_hemi = st.radio("南北半球", ["N", "S"], horizontal=True)
+
         if 'manual_df' not in st.session_state:
             st.session_state.manual_df = pd.DataFrame([{"编号": "T1", "纬度/X": "", "经度/Y": ""}, {"编号": "T2", "纬度/X": "", "经度/Y": ""}])
         edited_df = st.data_editor(st.session_state.manual_df, num_rows="dynamic", use_container_width=True)
-        
+
         if st.button("🚀 生成 KMZ", type="primary"):
             log_event("Generate KMZ", "Manual")
-            mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000"}
-            kml, count = generate_kmz(edited_df, mode_map[coord_mode_display], cm)
+            mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000", "UTM (投影)": "UTM"}
+            kml, count = generate_kmz(edited_df, mode_map[coord_mode_display], cm, utm_zone, utm_hemi)
             if count > 0:
                 kml.save("manual.kmz")
                 with open("manual.kmz", "rb") as f: st.download_button("📥 下载文件", f, "manual.kmz", type="primary")
@@ -960,26 +1029,31 @@ elif st.session_state.user_role == 'user':
                 with c1: col_name = st.selectbox("编号列", ["无"] + cols)
                 with c2: col_lat = st.selectbox("纬度/X 列", cols, index=0)
                 with c3: col_lon = st.selectbox("经度/Y 列", cols, index=0)
-                
+
                 processed = []
                 for i, row in df.iterrows():
                     processed.append({"编号": row[col_name] if col_name != "无" else f"P{i+1}", "纬度/X": row[col_lat], "经度/Y": row[col_lon]})
                 proc_df = pd.DataFrame(processed)
-                
+
                 st.write("---")
                 c_set1, c_set2 = st.columns(2)
-                with c_set1: coord_mode_display = st.selectbox("坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"])
+                with c_set1: coord_mode_display = st.selectbox("坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)", "UTM (投影)"])
                 with c_set2:
                     cm = 0
+                    utm_zone = 0
+                    utm_hemi = 'N'
                     if "CGCS2000" in coord_mode_display:
                         cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
                         cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
+                    elif "UTM" in coord_mode_display:
+                        utm_zone = st.selectbox("UTM 带号(6°)", list(range(1, 61)), index=49)
+                        utm_hemi = st.radio("南北半球", ["N", "S"], horizontal=True)
                 final_df = st.data_editor(proc_df, num_rows="dynamic", use_container_width=True)
-                
+
                 if st.button("🚀 生成 KMZ", type="primary"):
                     log_event("Generate KMZ", "Text Import")
-                    mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000"}
-                    kml, count = generate_kmz(final_df, mode_map[coord_mode_display], cm)
+                    mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000", "UTM (投影)": "UTM"}
+                    kml, count = generate_kmz(final_df, mode_map[coord_mode_display], cm, utm_zone, utm_hemi)
                     if count > 0:
                         kml.save("text_import.kmz")
                         with open("text_import.kmz", "rb") as f: st.download_button("📥 下载文件", f, "text_import.kmz", type="primary")
@@ -991,13 +1065,13 @@ elif st.session_state.user_role == 'user':
         if 'raw_img' not in st.session_state: st.session_state.raw_img = None
         if 'ai_json_text' not in st.session_state: st.session_state.ai_json_text = ""
         if 'parsed_df' not in st.session_state: st.session_state.parsed_df = None
-        
+
         img_file = st.file_uploader("📸 点击上传或直接拖拽图片到此处 (拍照/选图)", type=['png', 'jpg', 'jpeg'])
         if img_file:
             opened_img = Image.open(img_file)
             st.session_state.raw_img = ImageOps.exif_transpose(opened_img)
             st.image(st.session_state.raw_img, caption="预览", width=350)
-            
+
             if st.button("✨ 开始识别", type="primary"):
                 log_event("AI Recognize", "Start")
                 with st.spinner("AI 识别中..."):
@@ -1019,20 +1093,25 @@ elif st.session_state.user_role == 'user':
             st.divider()
             st.subheader("结果核对")
             c1, c2 = st.columns(2)
-            with c1: coord_mode = st.selectbox("图片坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)"], index=0)
+            with c1: coord_mode = st.selectbox("图片坐标格式", ["Decimal (小数)", "DMS (度分秒)", "DDM (度.分)", "CGCS2000 (投影)", "UTM (投影)"], index=0)
             with c2:
                 cm = 0
+                utm_zone = 0
+                utm_hemi = 'N'
                 if coord_mode == "CGCS2000 (投影)":
                     cm_ops = {0:0, 75:75, 81:81, 87:87, 93:93, 99:99, 105:105, 114:114, 123:123}
                     cm = st.selectbox("中央经线", list(cm_ops.keys()), format_func=lambda x: "自动" if x==0 else str(x))
-            
+                elif coord_mode == "UTM (投影)":
+                    utm_zone = st.selectbox("UTM 带号(6°)", list(range(1, 61)), index=49)
+                    utm_hemi = st.radio("南北半球", ["N", "S"], horizontal=True)
+
             final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", use_container_width=True)
-            
+
             st.write("")
             if st.button("🚀 生成 KMZ", type="primary"):
                 log_event("Generate KMZ", "AI Result")
-                mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000"}
-                kml, count = generate_kmz(final_df, mode_map[coord_mode], cm)
+                mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000", "UTM (投影)": "UTM"}
+                kml, count = generate_kmz(final_df, mode_map[coord_mode], cm, utm_zone, utm_hemi)
                 if count > 0:
                     kml.save("zhipu_result.kmz")
                     with open("zhipu_result.kmz", "rb") as f: st.download_button("📥 下载文件", f, "zhipu_result.kmz", type="primary")
@@ -1058,10 +1137,13 @@ elif st.session_state.user_role == 'user':
                         "WGS84 度分秒(DMS)",
                         "WGS84 度.分(DDM)",
                         "CGCS2000 投影坐标",
+                        "UTM 投影坐标",
                     ])
                 with c2:
                     cm = 0
                     zone_override = 0
+                    utm_zone_override = 0
+                    utm_hemi = None
                     if output_format in ["CGCS2000 投影坐标", "全格式(所有列)"]:
                         zone_mode = st.selectbox("度带号模式", ["自动判定", "手动指定"])
                         if zone_mode == "手动指定":
@@ -1070,10 +1152,16 @@ elif st.session_state.user_role == 'user':
                             st.caption(f"当前中央经线：{cm}")
                         else:
                             st.caption("将根据点位经度自动判定3度带号和中央经线")
+                    if output_format in ["UTM 投影坐标", "全格式(所有列)"]:
+                        utm_zone_mode = st.selectbox("UTM 带号模式", ["自动判定", "手动指定"], key="utm_zone_mode")
+                        if utm_zone_mode == "手动指定":
+                            utm_zone_override = st.selectbox("UTM 6°带号", list(range(1, 61)), index=49, key="utm_zone_sel")
+                        utm_hemi_sel = st.radio("UTM 半球", ["自动", "N", "S"], horizontal=True, key="utm_hemi_sel")
+                        utm_hemi = None if utm_hemi_sel == "自动" else utm_hemi_sel
 
                 if st.button("🚀 生成 Excel", type="primary"):
                     log_event("KMZ to Excel", output_format)
-                    buf, df = build_excel(points, output_format, cm, zone_override)
+                    buf, df = build_excel(points, output_format, cm, zone_override, utm_zone_override, utm_hemi)
                     st.dataframe(df, use_container_width=True)
                     st.download_button("📥 下载 Excel", buf, file_name="坐标导出.xlsx",
                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
