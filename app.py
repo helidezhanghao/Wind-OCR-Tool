@@ -22,11 +22,22 @@ import sqlite3
 import uuid
 from pathlib import Path
 from datetime import timedelta
+from coordinate_utils import get_utm_zone, utm_to_wgs84, wgs84_to_utm
 
 # --- 全局配置 ---
-ZHIPU_API_KEY = "c1bcd3c427814b0b80e8edd72205a830.mWewm9ZI2UOgwYQy"
-# USER_PASSWORD = "2026"  <-- 普通用户密码已取消
-ADMIN_PASSWORD = "0521" # 管理员密码
+def get_runtime_secret(name, default=""):
+    """Read a secret from the environment or Streamlit secrets."""
+    env_value = os.getenv(name)
+    if env_value:
+        return env_value
+    try:
+        return str(st.secrets.get(name, default))
+    except Exception:
+        return default
+
+
+ZHIPU_API_KEY = get_runtime_secret("ZHIPU_API_KEY")
+ADMIN_PASSWORD = get_runtime_secret("ADMIN_PASSWORD")
 LOG_FILE = "usage_log.csv"
 LOGO_FILENAME = "logo.png"
 APP_DIR = Path(__file__).resolve().parent
@@ -35,7 +46,7 @@ FEEDBACK_DB = FEEDBACK_BASE_DIR / "feedback.db"
 FEEDBACK_UPLOAD_DIR = FEEDBACK_BASE_DIR / "feedback_uploads"
 
 # 设置 layout="wide"
-st.set_page_config(page_title="力力的坐标工具 v33.0", page_icon="📲", layout="wide")
+st.set_page_config(page_title="力力的坐标工具 v33.1", page_icon="📲", layout="wide")
 
 # 🔥🔥🔥 CSS 样式 (保持不变) 🔥🔥🔥
 st.markdown("""
@@ -347,37 +358,6 @@ def wgs84_to_cgcs2000(lat, lon, cm):
     except:
         return None, None, None, None, None
 
-def get_utm_zone(lon):
-    """根据经度返回UTM 6度带号(1-60)"""
-    return max(1, min(60, int((lon + 180) / 6) + 1))
-
-def wgs84_to_utm(lat, lon, zone_override=0, hemi_override=None):
-    """WGS84经纬度 -> UTM投影坐标 (WGS84椭球, 6度带, k0=0.9996)
-    返回: (东坐标E, 北坐标N, 带号, 半球, 中央经线, EPSG)"""
-    zone = int(zone_override) if zone_override else get_utm_zone(lon)
-    zone = max(1, min(60, zone))
-    hemi = hemi_override if hemi_override in ('N', 'S') else ('N' if lat >= 0 else 'S')
-    epsg = (32600 if hemi == 'N' else 32700) + zone
-    lon0 = zone * 6 - 183  # 该带中央经线
-    try:
-        t = Transformer.from_crs(CRS.from_epsg(4326), CRS.from_epsg(epsg), always_xy=True)
-        east, north = t.transform(lon, lat)
-        return east, north, zone, hemi, lon0, epsg
-    except:
-        return None, None, None, None, None, None
-
-def utm_to_wgs84(easting, northing, zone, hemi='N'):
-    """UTM投影坐标 -> WGS84经纬度，返回 (lat, lon)"""
-    try:
-        zone = max(1, min(60, int(zone)))
-        hemi = hemi if hemi in ('N', 'S') else 'N'
-        epsg = (32600 if hemi == 'N' else 32700) + zone
-        t = Transformer.from_crs(CRS.from_epsg(epsg), CRS.from_epsg(4326), always_xy=True)
-        lon, lat = t.transform(easting, northing)
-        return lat, lon
-    except:
-        return None, None
-
 def decimal_to_dms(deg):
     """小数度转度分秒字符串"""
     d = int(deg)
@@ -514,6 +494,76 @@ def build_excel(points, output_format, cm=0, zone_override=0, utm_zone_override=
     df.to_excel(buf, index=False)
     buf.seek(0)
     return buf, df
+
+
+def dataframe_to_excel_bytes(df):
+    buf = BytesIO()
+    df.to_excel(buf, index=False)
+    buf.seek(0)
+    return buf
+
+
+def kml_to_kmz_bytes(kml):
+    """Build a real KMZ archive without leaving shared files on disk."""
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".kmz", delete=False) as tmp:
+            temp_path = tmp.name
+        kml.savekmz(temp_path)
+        return Path(temp_path).read_bytes()
+    finally:
+        if temp_path:
+            Path(temp_path).unlink(missing_ok=True)
+
+
+def build_utm_conversion(df, direction, zone_override=0, hemi_override=None):
+    """Convert editable table rows and return (result dataframe, error rows)."""
+    rows = []
+    error_rows = []
+
+    for index, row in df.iterrows():
+        point_name = str(row.get("编号", "") or f"P{index + 1}")
+        try:
+            if direction == "WGS84 → UTM":
+                latitude = float(row.get("纬度"))
+                longitude = float(row.get("经度"))
+                east, north, zone, hemi, lon0, epsg = wgs84_to_utm(
+                    latitude, longitude, zone_override, hemi_override
+                )
+                if east is None:
+                    raise ValueError
+                rows.append({
+                    "编号": point_name,
+                    "纬度": round(latitude, 8),
+                    "经度": round(longitude, 8),
+                    "UTM带号": zone,
+                    "半球": hemi,
+                    "东坐标E(m)": round(east, 3),
+                    "北坐标N(m)": round(north, 3),
+                    "中央经线": lon0,
+                    "EPSG": epsg,
+                })
+            else:
+                east = float(row.get("东坐标E(m)"))
+                north = float(row.get("北坐标N(m)"))
+                latitude, longitude = utm_to_wgs84(
+                    east, north, zone_override, hemi_override or "N"
+                )
+                if latitude is None:
+                    raise ValueError
+                rows.append({
+                    "编号": point_name,
+                    "UTM带号": int(zone_override),
+                    "半球": hemi_override or "N",
+                    "东坐标E(m)": round(east, 3),
+                    "北坐标N(m)": round(north, 3),
+                    "纬度": round(latitude, 8),
+                    "经度": round(longitude, 8),
+                })
+        except (TypeError, ValueError):
+            error_rows.append(index + 1)
+
+    return pd.DataFrame(rows), error_rows
 
 LAND_TYPE_COLORS = [
     simplekml.Color.changealpha('aa', simplekml.Color.red),
@@ -680,6 +730,8 @@ def classify_to_kmz_zip(uploaded_files, land_col_override=None):
 
 def recognize_image_with_zhipu(image):
     try:
+        if not ZHIPU_API_KEY:
+            return "CRITICAL_ERROR: 未配置 ZHIPU_API_KEY"
         client = ZhipuAI(api_key=ZHIPU_API_KEY)
         img_base64 = image_to_base64(image)
         response = client.chat.completions.create(
@@ -722,7 +774,7 @@ if st.session_state.user_role is None:
             b_gap1, b_content, b_gap2 = st.columns([1, 3, 1])
             with b_content:
                 # 🔥🔥🔥 修改点：点击直接进入，不再跳转输入密码 🔥🔥🔥
-                if st.button("🚀 普通用户登录", type="primary", use_container_width=True):
+                if st.button("🚀 普通用户登录", type="primary", width="stretch"):
                     st.session_state.user_role = 'user'
                     log_event("Login", "User Auto-Login")
                     st.rerun()
@@ -730,7 +782,7 @@ if st.session_state.user_role is None:
                 st.write("")
 
                 # 管理员依然需要密码
-                if st.button("🛡️ 管理员登录", use_container_width=True):
+                if st.button("🛡️ 管理员登录", width="stretch"):
                     st.session_state.login_mode = 'admin_input'
                     st.rerun()
 
@@ -740,9 +792,11 @@ if st.session_state.user_role is None:
             st.caption("🔒 请输入管理员密码")
             with st.form("admin_login_form"):
                 password = st.text_input("管理员密码", type="password", label_visibility="collapsed")
-                submit = st.form_submit_button("解锁后台", type="primary", use_container_width=True)
+                submit = st.form_submit_button("解锁后台", type="primary", width="stretch")
                 if submit:
-                    if password == ADMIN_PASSWORD:
+                    if not ADMIN_PASSWORD:
+                        st.error("管理员密码尚未配置，请设置 ADMIN_PASSWORD。")
+                    elif password == ADMIN_PASSWORD:
                         st.session_state.user_role = 'admin'
                         st.session_state.login_mode = 'select'
                         st.toast("管理员身份已验证")
@@ -750,7 +804,7 @@ if st.session_state.user_role is None:
                     else: st.error("密码错误")
             b_gap1, b_back, b_gap2 = st.columns([1, 3, 1])
             with b_back:
-                if st.button("⬅️ 返回", use_container_width=True):
+                if st.button("⬅️ 返回", width="stretch"):
                     st.session_state.login_mode = 'select'
                     st.rerun()
 
@@ -774,7 +828,7 @@ elif st.session_state.user_role == 'admin':
     with c3: st.markdown(f"<div class='metric-card'><h3>🕒 最近活动</h3><p>{last_access}</p></div>", unsafe_allow_html=True)
 
     st.subheader("详细日志")
-    st.dataframe(df_logs.sort_index(ascending=False), use_container_width=True)
+    st.dataframe(df_logs.sort_index(ascending=False), width="stretch")
     st.download_button("📥 导出 CSV", df_logs.to_csv(index=False).encode('utf-8'), "usage_logs.csv", "text/csv")
 
     st.divider()
@@ -856,7 +910,7 @@ elif st.session_state.user_role == 'admin':
         edited_feedback_df = st.data_editor(
             show_df[["删除", "ID", "提交时间", "姓名", "角色", "功能模块", "评分", "意见", "附件名", "附件路径"]],
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "删除": st.column_config.CheckboxColumn("删除"),
                 "ID": st.column_config.NumberColumn("ID", disabled=True),
@@ -870,7 +924,7 @@ elif st.session_state.user_role == 'admin':
                 "附件路径": st.column_config.TextColumn("附件路径", disabled=True),
             }
         )
-        if st.button("🗑️ 删除勾选反馈", use_container_width=True):
+        if st.button("🗑️ 删除勾选反馈", width="stretch"):
             selected_ids = edited_feedback_df.loc[edited_feedback_df["删除"] == True, "ID"].tolist()
             deleted = delete_feedback(selected_ids)
             if deleted:
@@ -914,7 +968,7 @@ elif st.session_state.user_role == 'admin':
                 st.write(f"反馈人：{preview_row['submitted_by']}  |  评分：{preview_row['rating']}")
                 st.write(f"留言：{preview_row['comment']}")
                 if suffix in [".png", ".jpg", ".jpeg"]:
-                    st.image(attachment_path, caption=attachment_name, use_container_width=True)
+                    st.image(attachment_path, caption=attachment_name, width="stretch")
                 elif suffix == ".pdf":
                     with open(attachment_path, "rb") as f:
                         pdf_bytes = f.read()
@@ -945,10 +999,14 @@ elif st.session_state.user_role == 'user':
             st.session_state.user_role = None
             st.rerun()
         st.divider()
-        app_mode = st.radio("功能选择", ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel", "📝 意见反馈"], index=2)
+        app_mode = st.radio(
+            "功能选择",
+            ["🖐️ 手动输入", "📄 文本导入", "📸 AI图片识别", "📂 KMZ转Excel", "🔄 UTM互转", "📝 意见反馈"],
+            index=2,
+        )
         st.info("切换模式会清空当前数据")
 
-    st.title("力力的坐标工具 v33.0")
+    st.title("力力的坐标工具 v33.1")
 
     if app_mode == "📝 意见反馈":
         st.header("📝 意见反馈")
@@ -1001,15 +1059,14 @@ elif st.session_state.user_role == 'user':
 
         if 'manual_df' not in st.session_state:
             st.session_state.manual_df = pd.DataFrame([{"编号": "T1", "纬度/X": "", "经度/Y": ""}, {"编号": "T2", "纬度/X": "", "经度/Y": ""}])
-        edited_df = st.data_editor(st.session_state.manual_df, num_rows="dynamic", use_container_width=True)
+        edited_df = st.data_editor(st.session_state.manual_df, num_rows="dynamic", width="stretch")
 
         if st.button("🚀 生成 KMZ", type="primary"):
             log_event("Generate KMZ", "Manual")
             mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000", "UTM (投影)": "UTM"}
             kml, count = generate_kmz(edited_df, mode_map[coord_mode_display], cm, utm_zone, utm_hemi)
             if count > 0:
-                kml.save("manual.kmz")
-                with open("manual.kmz", "rb") as f: st.download_button("📥 下载文件", f, "manual.kmz", type="primary")
+                st.download_button("📥 下载文件", kml_to_kmz_bytes(kml), "manual.kmz", type="primary")
             else: st.error("数据无效")
 
     # 模式 2: 文本导入
@@ -1048,15 +1105,14 @@ elif st.session_state.user_role == 'user':
                     elif "UTM" in coord_mode_display:
                         utm_zone = st.selectbox("UTM 带号(6°)", list(range(1, 61)), index=49)
                         utm_hemi = st.radio("南北半球", ["N", "S"], horizontal=True)
-                final_df = st.data_editor(proc_df, num_rows="dynamic", use_container_width=True)
+                final_df = st.data_editor(proc_df, num_rows="dynamic", width="stretch")
 
                 if st.button("🚀 生成 KMZ", type="primary"):
                     log_event("Generate KMZ", "Text Import")
                     mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000", "UTM (投影)": "UTM"}
                     kml, count = generate_kmz(final_df, mode_map[coord_mode_display], cm, utm_zone, utm_hemi)
                     if count > 0:
-                        kml.save("text_import.kmz")
-                        with open("text_import.kmz", "rb") as f: st.download_button("📥 下载文件", f, "text_import.kmz", type="primary")
+                        st.download_button("📥 下载文件", kml_to_kmz_bytes(kml), "text_import.kmz", type="primary")
             except Exception as e: st.error(f"读取失败: {str(e)}")
 
     # 模式 3: AI
@@ -1105,7 +1161,7 @@ elif st.session_state.user_role == 'user':
                     utm_zone = st.selectbox("UTM 带号(6°)", list(range(1, 61)), index=49)
                     utm_hemi = st.radio("南北半球", ["N", "S"], horizontal=True)
 
-            final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", use_container_width=True)
+            final_df = st.data_editor(st.session_state.parsed_df, num_rows="dynamic", width="stretch")
 
             st.write("")
             if st.button("🚀 生成 KMZ", type="primary"):
@@ -1113,8 +1169,7 @@ elif st.session_state.user_role == 'user':
                 mode_map = {"Decimal (小数)": "Decimal", "DMS (度分秒)": "DMS", "DDM (度.分)": "DDM", "CGCS2000 (投影)": "CGCS2000", "UTM (投影)": "UTM"}
                 kml, count = generate_kmz(final_df, mode_map[coord_mode], cm, utm_zone, utm_hemi)
                 if count > 0:
-                    kml.save("zhipu_result.kmz")
-                    with open("zhipu_result.kmz", "rb") as f: st.download_button("📥 下载文件", f, "zhipu_result.kmz", type="primary")
+                    st.download_button("📥 下载文件", kml_to_kmz_bytes(kml), "zhipu_result.kmz", type="primary")
                 else: st.error("无有效数据。")
 
     # 模式 4: KMZ转Excel
@@ -1127,7 +1182,7 @@ elif st.session_state.user_role == 'user':
                 st.error("未读取到点位数据，请确认文件包含点标注")
             else:
                 st.success(f"共读取到 {len(points)} 个点位")
-                st.dataframe(pd.DataFrame(points).rename(columns={'name':'编号','lat':'纬度','lon':'经度'}), use_container_width=True)
+                st.dataframe(pd.DataFrame(points).rename(columns={'name':'编号','lat':'纬度','lon':'经度'}), width="stretch")
                 st.divider()
                 c1, c2 = st.columns(2)
                 with c1:
@@ -1162,7 +1217,86 @@ elif st.session_state.user_role == 'user':
                 if st.button("🚀 生成 Excel", type="primary"):
                     log_event("KMZ to Excel", output_format)
                     buf, df = build_excel(points, output_format, cm, zone_override, utm_zone_override, utm_hemi)
-                    st.dataframe(df, use_container_width=True)
+                    st.dataframe(df, width="stretch")
                     st.download_button("📥 下载 Excel", buf, file_name="坐标导出.xlsx",
                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                        type="primary")
+
+    # 模式 5: WGS84 / UTM 双向转换
+    elif app_mode == "🔄 UTM互转":
+        st.header("🔄 WGS84 / UTM 双向转换")
+        st.caption("UTM 使用 WGS84 椭球；东、北坐标单位均为米。反算时必须选择正确的带号和半球。")
+
+        direction = st.radio(
+            "转换方向",
+            ["WGS84 → UTM", "UTM → WGS84"],
+            horizontal=True,
+        )
+
+        if direction == "WGS84 → UTM":
+            c1, c2 = st.columns(2)
+            with c1:
+                zone_mode = st.selectbox("UTM 带号", ["自动判定", "手动指定"], key="roundtrip_zone_mode")
+                zone_override = 0
+                if zone_mode == "手动指定":
+                    zone_override = st.selectbox(
+                        "UTM 6°带号", list(range(1, 61)), index=49, key="roundtrip_zone"
+                    )
+            with c2:
+                hemi_mode = st.radio(
+                    "半球", ["自动", "N", "S"], horizontal=True, key="roundtrip_hemi_mode"
+                )
+                hemi_override = None if hemi_mode == "自动" else hemi_mode
+
+            default_df = pd.DataFrame([
+                {"编号": "P1", "纬度": "", "经度": ""},
+                {"编号": "P2", "纬度": "", "经度": ""},
+            ])
+        else:
+            c1, c2 = st.columns(2)
+            with c1:
+                zone_override = st.selectbox(
+                    "UTM 6°带号", list(range(1, 61)), index=49, key="roundtrip_inverse_zone"
+                )
+            with c2:
+                hemi_override = st.radio(
+                    "半球", ["N", "S"], horizontal=True, key="roundtrip_inverse_hemi"
+                )
+            default_df = pd.DataFrame([
+                {"编号": "P1", "东坐标E(m)": "", "北坐标N(m)": ""},
+                {"编号": "P2", "东坐标E(m)": "", "北坐标N(m)": ""},
+            ])
+
+        edited_df = st.data_editor(
+            default_df,
+            num_rows="dynamic",
+            width="stretch",
+            key=f"utm_roundtrip_editor_{direction}",
+        )
+
+        if st.button("🚀 开始转换", type="primary", key="utm_roundtrip_convert"):
+            result_df, error_rows = build_utm_conversion(
+                edited_df, direction, zone_override, hemi_override
+            )
+            st.session_state.utm_roundtrip_result = result_df
+            st.session_state.utm_roundtrip_errors = error_rows
+            st.session_state.utm_roundtrip_direction = direction
+            log_event("UTM Roundtrip", direction)
+
+        if st.session_state.get("utm_roundtrip_direction") == direction:
+            result_df = st.session_state.get("utm_roundtrip_result", pd.DataFrame())
+            error_rows = st.session_state.get("utm_roundtrip_errors", [])
+            if error_rows:
+                st.warning(f"第 {', '.join(map(str, error_rows))} 行数据无效，已跳过。")
+            if not result_df.empty:
+                st.success(f"转换完成，共 {len(result_df)} 个有效点。")
+                st.dataframe(result_df, width="stretch")
+                st.download_button(
+                    "📥 下载 Excel",
+                    dataframe_to_excel_bytes(result_df),
+                    file_name="UTM坐标转换.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                )
+            elif st.session_state.get("utm_roundtrip_errors"):
+                st.error("没有可转换的有效坐标，请检查数值、带号和半球。")
