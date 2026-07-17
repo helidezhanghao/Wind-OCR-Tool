@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+
+.streamlit/secrets.toml
+feedback_storage/
+usage_log.csv
+*.kmz
+
